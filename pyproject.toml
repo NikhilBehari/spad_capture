@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spad_capture"
+version = "0.1.0"
+description = "Capture pipeline for the AMS OSRAM TMF8828 SPAD sensor"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Nikhil Behari"}]
+
+dependencies = [
+  "numpy>=1.24",
+  "pyserial>=3.5",
+  "pydantic>=2.0",
+  "pyyaml>=6.0",
+  "click>=8.1",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "h5py>=3.10",
+  "rich>=13.0",
+  "opencv-python-headless>=4.9",   # for viz JPEG encoding of RGB + depth
+  "pyrealsense2>=2.50",            # colocated Realsense RGB + aligned depth
+]
+
+[project.optional-dependencies]
+dev = ["ruff", "pytest"]
+
+[project.scripts]
+spad = "spad_capture.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["spad_capture*"]
+
+[tool.setuptools.package-data]
+"spad_capture.firmware" = ["tmf8828/*"]
+"spad_capture.viz"      = ["static/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

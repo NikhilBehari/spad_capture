@@ -1,0 +1,32 @@
+# Single 2-SPAD horizontal pair at the optical center of the addressable area.
+#
+# Coordinate system: AMS 12-row x 18-col visual frame (DS000693 Fig 30/31/32).
+# Row 0 is the top of the scene; col 0 is the left. Rows 1..10 are
+# user-addressable. Rows 0 and 11 are macro-extension (not selectable with
+# the default y_offset_2 = 0). Visual rows 5 and 6 straddle the geometric
+# center of the 10-row mask region; this mask places one zone at (6, 8) /
+# (6, 9), the 2-SPAD pair closest to the optical center that fits
+# in the single-shot band (rows 1..6).
+#
+# Two horizontally-adjacent SPADs give the smallest near-square FoV
+# (4.81° x 5.55°). Per-SPAD subtense is 2.4° x 5.6°. A vertical pair
+# (rows 5/6 col 9) would give 2.4° x 11.2°, which is much more rectangular.
+#
+# Output: 1 user-zone histogram. The library auto-adds 3 dummy pixels at
+# safe corners to satisfy the device's TDC-pair calibration rule. They are
+# preserved in the saved data and hidden from the live viz.
+
+mask:
+  grid: |
+    x x x x x x x x x x x x x x x x x x   # row 0  macro-extension (unselectable)
+    . . . . . . . . . . . . . . . . . .   # row 1
+    . . . . . . . . . . . . . . . . . .   # row 2
+    . . . . . . . . . . . . . . . . . .   # row 3
+    . . . . . . . . . . . . . . . . . .   # row 4
+    . . . . . . . . . . . . . . . . . .   # row 5
+    . . . . . . . . 1 1 . . . . . . . .   # row 6  zone 1 (near optical center)
+    . . . . . . . . . . . . . . . . . .   # row 7
+    . . . . . . . . . . . . . . . . . .   # row 8
+    . . . . . . . . . . . . . . . . . .   # row 9
+    . . . . . . . . . . . . . . . . . .   # row 10
+    x x x x x x x x x x x x x x x x x x   # row 11 macro-extension (unselectable)

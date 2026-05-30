@@ -1,0 +1,18 @@
+# Four 2x2 zones arranged around the optical center, with two rows and
+# two columns between adjacent zones. The bottom pair crosses into the
+# time-multiplexed row band, so the mask auto-promotes to time-mux.
+
+mask:
+  grid: |
+    x x x x x x x x x x x x x x x x x x
+    . . . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . . . .
+    . . . . . . 1 1 . . 2 2 . . . . . .
+    . . . . . . 1 1 . . 2 2 . . . . . .
+    . . . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . . . .
+    . . . . . . 3 3 . . 4 4 . . . . . .
+    . . . . . . 3 3 . . 4 4 . . . . . .
+    . . . . . . . . . . . . . . . . . .
+    . . . . . . . . . . . . . . . . . .
+    x x x x x x x x x x x x x x x x x x

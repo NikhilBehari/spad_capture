@@ -1,0 +1,25 @@
+# 8x8 mode with colocated Realsense RGB and aligned depth, plus the live
+# dashboard.
+
+name: "8x8_rgb"
+
+sensor:
+  zone_mode: "8x8"
+  range_mode: "long"
+
+firmware:
+  kilo_iterations: 2500
+
+capture:
+  mode: "sequential"
+  num_frames: 10
+
+storage:
+  format: "h5"
+
+viz:
+  enabled: true
+
+rgb:
+  enabled: true
+  save_depth: true

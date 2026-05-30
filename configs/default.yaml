@@ -1,0 +1,46 @@
+# spad_capture default config. Every field shown is its default.
+# Full reference: docs/options.md.
+
+name: null
+
+sensor:
+  zone_mode: "3x3_wide"
+  range_mode: "long"
+  port: null
+  baudrate: 2000000
+  timeout_s: 1.0
+  init_wait_s: 1.5
+
+firmware:
+  kilo_iterations: null
+  period_ms: null
+
+capture:
+  mode: "sequential"
+  num_frames: 10
+  duration_s: null
+  interval_s: 0.0
+  samples_per_frame: 1
+
+storage:
+  format: "pkl"
+  root: "outputs"
+  run_dir_template: "{timestamp}_{zone_mode}_{range_mode}_{name}"
+  data_filename: "data"
+  save_metadata: true
+  save_resolved_config: true
+
+viz:
+  enabled: false
+  host: "127.0.0.1"
+  port: 8888
+  update_hz: 10.0
+
+rgb:
+  enabled: false
+  width: 848
+  height: 480
+  fps: 30
+  serial_number: null
+  save_depth: false
+  jpeg_quality: 80

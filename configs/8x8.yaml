@@ -1,0 +1,18 @@
+# 8x8 mode with an explicit kIter (the firmware default of 10 is
+# too low for 8x8 to produce usable counts).
+
+name: "8x8"
+
+sensor:
+  zone_mode: "8x8"
+  range_mode: "long"
+
+firmware:
+  kilo_iterations: 2500
+
+capture:
+  mode: "sequential"
+  num_frames: 5
+
+storage:
+  format: "npy"

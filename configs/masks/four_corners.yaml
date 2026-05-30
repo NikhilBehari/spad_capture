@@ -1,0 +1,36 @@
+# Four 2-SPAD zones at the four extreme corners of the addressable mask region.
+#
+# Coordinate system: AMS 12-row x 18-col visual frame (DS000693 Fig 30/31/32).
+# Row 0 is the top of the scene; col 0 is the left. Rows 1..10 are
+# user-addressable. Rows 0 and 11 are macro-extension (not selectable with
+# the default y_offset_2 = 0).
+#
+# Corners used:
+#   row 1,  col 0/1    top-left of addressable area
+#   row 1,  col 16/17  top-right
+#   row 10, col 0/1    bottom-left  (in time-mux band)
+#   row 10, col 16/17  bottom-right (in time-mux band)
+#
+# Because zones 3 and 4 sit in rows 7..10, the library auto-promotes the
+# upload to time-multiplexed mode (map_id=15). The two top zones go to
+# sub-capture 0 (SPAD-1 page); the two bottom zones go to sub-capture 1
+# (SPAD-2 page). The frame rate is roughly half of a single-shot mask.
+#
+# Output: 4 user-zone histograms (2 per sub-cap, 2 sub-caps), plus 2
+# auto-added dummy pixels per sub-capture to satisfy the device's TDC-pair
+# calibration rule. Total: 8 entries in the output array.
+
+mask:
+  grid: |
+    x x x x x x x x x x x x x x x x x x   # row 0  macro-extension (unselectable)
+    1 1 . . . . . . . . . . . . . . 2 2   # row 1  zones 1, 2 (top extremes), sub-cap 0
+    . . . . . . . . . . . . . . . . . .   # row 2
+    . . . . . . . . . . . . . . . . . .   # row 3
+    . . . . . . . . . . . . . . . . . .   # row 4
+    . . . . . . . . . . . . . . . . . .   # row 5
+    . . . . . . . . . . . . . . . . . .   # row 6  (end of single-shot band)
+    . . . . . . . . . . . . . . . . . .   # row 7  (start of time-mux band)
+    . . . . . . . . . . . . . . . . . .   # row 8
+    . . . . . . . . . . . . . . . . . .   # row 9
+    3 3 . . . . . . . . . . . . . . 4 4   # row 10 zones 3, 4 (bottom extremes), sub-cap 1
+    x x x x x x x x x x x x x x x x x x   # row 11 macro-extension (unselectable)

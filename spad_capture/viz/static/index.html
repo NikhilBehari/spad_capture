@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>spad_capture · viz</title>
+  <style>
+    :root {
+      --bg: #0e1116; --fg: #e6edf3; --grid: #21262d; --accent: #58a6ff;
+      --muted: #768390; --good: #56d364; --warn: #d29922;
+      --cell-bg: #161b22;
+    }
+    :root.light {
+      --bg: #fbfcfd; --fg: #1f2328; --grid: #d0d7de; --accent: #0969da;
+      --muted: #59636e; --good: #1f883d; --warn: #9a6700;
+      --cell-bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    header { padding: 12px 18px; border-bottom: 1px solid var(--grid); display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+    header .meta { color: var(--muted); font-size: 12px; }
+    .controls { margin-left: auto; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+    .controls label { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    .controls input[type="number"] { width: 74px; }
+    .controls input, .controls select {
+      background: var(--cell-bg); color: var(--fg); border: 1px solid var(--grid);
+      border-radius: 4px; padding: 4px 8px; font: inherit;
+    }
+    .controls input:focus { outline: 1px solid var(--accent); }
+    main { padding: 18px; display: grid; gap: 16px; grid-template-columns: 1fr;
+            align-items: center; }
+    body.waiting #grid::before {
+      content: "waiting for frames…";
+      display: block;
+      color: var(--muted);
+      padding: 60px 0;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    /* Histograms take the remaining width; side pane caps at a reasonable
+       size on large monitors (otherwise full-screen made the RGB/depth
+       images dominate). Cap = whichever is smaller of 32vw and 420 px. */
+    main.with-side { grid-template-columns: 1fr min(32vw, 420px); }
+    @media (max-width: 900px) { main.with-side { grid-template-columns: 1fr; } }
+    #grid { display: grid; gap: 8px; }
+    .cell { background: var(--cell-bg); border: 1px solid var(--grid); border-radius: 6px; padding: 4px 6px 2px; position: relative; }
+    .cell .label { font-size: 10px; color: var(--muted); display: flex; justify-content: space-between; }
+    .cell.user .label .name { color: var(--fg); font-weight: 600; }
+    .cell canvas { width: 100%; display: block; height: 64px; }
+    /* Adaptive canvas height: when the grid is flat (1 or 2 rows) the cells
+       would otherwise look squished, especially next to RGB/depth panes.
+       Give them more vertical room; when the grid is square-ish keep the
+       compact 64 px height so the whole grid fits without scrolling. */
+    #grid.rows-1 .cell canvas { height: 220px; }
+    #grid.rows-2 .cell canvas { height: 140px; }
+    #grid.rows-3 .cell canvas { height: 92px; }
+    #side { display: none; flex-direction: column; gap: 12px; }
+    .pane { background: var(--cell-bg); border: 1px solid var(--grid); border-radius: 6px; padding: 10px; }
+    .pane.hidden { display: none; }
+    .pane h3 { margin: 0 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: flex; justify-content: space-between; align-items: center; }
+    .pane img { width: 100%; display: block; border-radius: 4px; image-rendering: -webkit-optimize-contrast; }
+    main.with-side #side { display: flex; }
+    #replay-bar { display: none; padding: 10px 18px; gap: 10px; align-items: center; border-top: 1px solid var(--grid); background: var(--cell-bg); }
+    #replay-bar.show { display: flex; }
+    #replay-bar #scrub { flex: 1; }
+    .footer { padding: 10px 18px; color: var(--muted); border-top: 1px solid var(--grid); font-size: 12px; display: flex; gap: 18px; flex-wrap: wrap; }
+    .pill { padding: 2px 8px; border-radius: 999px; background: var(--cell-bg); border: 1px solid var(--grid); }
+    .ok { color: var(--good); }
+    .stop { color: var(--warn); }
+    button { background: var(--cell-bg); color: var(--fg); border: 1px solid var(--grid); border-radius: 4px; padding: 4px 10px; font: inherit; cursor: pointer; min-width: 32px; }
+    button:hover { border-color: var(--accent); }
+    button.active { border-color: var(--accent); color: var(--accent); }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    .toggle { font-size: 11px; padding: 2px 8px; min-width: auto; }
+
+    /* Mask modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      background: var(--bg); color: var(--fg); border: 1px solid var(--grid);
+      border-radius: 8px; padding: 18px 22px; max-width: 92vw;
+      max-height: 90vh; overflow: auto;
+    }
+    /* Inner content is sized to the mask grid (19 cols × 22 px ≈ 418 px) so
+       the legend / zone list wraps naturally to match the grid's width. */
+    .modal-inner { display: block; width: 418px; max-width: 100%; }
+    .modal h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: 0.06em;
+                text-transform: uppercase; color: var(--muted); display: flex;
+                justify-content: space-between; align-items: center; }
+    .modal h2 button { font-size: 12px; }
+    .mask-table { border-collapse: collapse; margin: 12px auto;
+                  font: 12px/1 ui-monospace,monospace; }
+    .mask-table td { width: 22px; height: 22px; text-align: center; vertical-align: middle;
+                     border: 1px solid var(--grid); background: var(--cell-bg);
+                     color: var(--muted); }
+    .mask-table td.zone { color: var(--fg); font-weight: 600; }
+    .mask-table td.zone-1 { background: #3b82f6; color: #fff; }
+    .mask-table td.zone-2 { background: #f59e0b; color: #fff; }
+    .mask-table td.zone-3 { background: #10b981; color: #fff; }
+    .mask-table td.zone-4 { background: #ef4444; color: #fff; }
+    .mask-table td.zone-5 { background: #8b5cf6; color: #fff; }
+    .mask-table td.zone-6 { background: #ec4899; color: #fff; }
+    .mask-table td.zone-7 { background: #14b8a6; color: #fff; }
+    .mask-table td.zone-8 { background: #f97316; color: #fff; }
+    .mask-table td.dead { background: var(--bg); color: var(--muted); opacity: 0.4; }
+    .mask-table td.overlap { font-size: 8px; font-weight: 600; }
+    /* SPAD cells render small colored dots, one per zone that claims the
+       SPAD. Cells with multiple claiming zones (overlap) stack 2..4 dots. */
+    .mask-table td.spad { padding: 0; vertical-align: middle; line-height: 0; }
+    .mask-table td.spad .dots { display: flex; gap: 1px; justify-content: center;
+                                 align-items: center; flex-wrap: wrap; }
+    .mask-table td.spad .dot  { display: inline-block; border-radius: 50%; }
+    .mask-table td.spad.n-1 .dot { width: 9px; height: 9px; }
+    .mask-table td.spad.n-2 .dot { width: 6px; height: 6px; }
+    .mask-table td.spad.n-3 .dot, .mask-table td.spad.n-4 .dot { width: 5px; height: 5px; }
+    .mask-table th { font-size: 9px; color: var(--muted); font-weight: 400;
+                     padding: 1px 3px; text-align: center; min-width: 22px; }
+    .mask-table th.rowlabel { text-align: right; padding-right: 6px; min-width: auto; }
+    .mask-legend { font-size: 11px; color: var(--muted); display: grid;
+                   grid-template-columns: repeat(2, minmax(0, 1fr));
+                   gap: 4px 14px; margin-top: 12px; }
+    .mask-legend .swatch { display: inline-block; width: 12px; height: 12px;
+                           vertical-align: middle; margin-right: 4px; border-radius: 2px;
+                           border: 1px solid var(--grid); }
+    .mask-zones-list { font-size: 11px; color: var(--muted); margin-top: 10px;
+                       display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                       gap: 3px 12px; }
+    .mask-zones-list .uz { color: var(--fg); }
+    .mask-zones-list .du { color: var(--muted); opacity: 0.7; }
+    .mask-zones-list .zone-dot { display: inline-block; width: 10px; height: 10px;
+                                  vertical-align: middle; margin-right: 6px;
+                                  border-radius: 2px; border: 1px solid var(--grid); }
+    /* Playback info-modal tabs */
+    .info-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--grid);
+                 margin: -4px 0 12px; padding-bottom: 0; }
+    .info-tabs button { background: transparent; border: none; color: var(--muted);
+                        padding: 8px 12px; font: inherit; font-size: 11px;
+                        text-transform: uppercase; letter-spacing: .06em;
+                        border-bottom: 2px solid transparent; min-width: auto;
+                        border-radius: 0; cursor: pointer; }
+    .info-tabs button:hover { color: var(--fg); }
+    .info-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .info-pane { display: none; }
+    .info-pane.active { display: block; }
+    .kv-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+    .kv-table tr { border-bottom: 1px dashed var(--grid); }
+    .kv-table tr:last-child { border-bottom: 0; }
+    .kv-table th { text-align: left; color: var(--muted); font-weight: 400;
+                   padding: 6px 12px 6px 0; white-space: nowrap; vertical-align: top; }
+    .kv-table td { padding: 6px 0; vertical-align: top; }
+    .kv-table td.num { font: 12px ui-monospace,monospace; }
+    .badge { display: inline-block; padding: 1px 7px; border-radius: 999px;
+             font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+             border: 1px solid var(--grid); color: var(--muted); }
+    .badge.good { color: var(--good); border-color: var(--good); }
+    .badge.warn { color: var(--warn); border-color: var(--warn); }
+    .badge.stop { color: var(--warn); border-color: var(--warn); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>spad_capture <span id="mode-tag" class="pill"></span></h1>
+    <div class="meta" id="meta">connecting…</div>
+    <div class="controls">
+      <label title="cap the histogram y-axis (leave blank for auto-scale)">y-max <input id="ymax" type="number" placeholder="auto" min="1" /></label>
+      <label title="lowest time-bin to display (0–127)">bin from <input id="binmin" type="number" placeholder="0" min="0" max="127" /></label>
+      <label title="highest time-bin to display (0–127)">to <input id="binmax" type="number" placeholder="127" min="0" max="127" /></label>
+      <label title="plot counts on a log scale"><input id="logy" type="checkbox" /> log-y</label>
+      <button class="toggle" id="t-rgb" disabled title="no rgb stream in this capture">rgb</button>
+      <button class="toggle" id="t-depth" disabled title="no depth stream in this capture">depth</button>
+      <button class="toggle" id="t-capture" hidden title="trigger a manual-mode burst (writes num_frames frames to disk)">capture</button>
+      <button class="toggle" id="t-mask" title="show mask layout and capture info">info</button>
+      <button class="toggle" id="t-theme" title="toggle light / dark theme">☾</button>
+    </div>
+  </header>
+
+  <div class="modal-backdrop" id="mask-modal">
+    <div class="modal">
+      <h2><span id="info-title">SPAD mask used for this capture</span>
+          <button id="mask-close">✕</button></h2>
+      <div id="info-tabs" class="info-tabs"></div>
+      <div class="modal-inner" id="mask-body">loading…</div>
+    </div>
+  </div>
+  <main id="main">
+    <div id="grid"></div>
+    <div id="side">
+      <div class="pane" id="pane-rgb">
+        <h3>rgb camera</h3>
+        <img id="rgb-img" alt="rgb" />
+      </div>
+      <div class="pane" id="pane-depth">
+        <h3>depth (aligned to rgb)</h3>
+        <img id="depth-img" alt="depth" />
+      </div>
+    </div>
+  </main>
+  <div id="replay-bar">
+    <button id="r-prev" title="previous frame">⏮ prev</button>
+    <button id="r-next" title="next frame">next ⏭</button>
+    <input id="scrub" type="range" min="0" value="0" title="scrub through frames" />
+    <span id="r-idx" style="color: var(--muted)" title="current frame / total frames">—</span>
+    <label style="color: var(--muted); margin-left: 8px;" title="jump directly to a frame number">go to frame
+      <input id="r-jump" type="number" min="0" step="1" placeholder="#" style="width: 60px;" />
+    </label>
+  </div>
+  <div class="footer">
+    <div>frame <span id="frame_idx">—</span></div>
+    <div title="highest single-bin count across displayed zones">peak count <span id="peak">—</span></div>
+    <div title="sum of all bins across displayed zones (filtered to selected bin range)">total counts <span id="sum">—</span></div>
+    <div title="frames per second (rolling average)">fps <span id="fps">—</span></div>
+    <div title="wall-clock time of the most recent frame">last update <span id="last">—</span></div>
+    <div class="pill" id="status">connecting…</div>
+  </div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const grid = $('grid');
+  const mainEl = $('main');
+  const rgbImg = $('rgb-img');
+  const depthImg = $('depth-img');
+  const replayBar = $('replay-bar');
+
+  // Wire-format constants (must match server.py _HEADER "<IIIIdII").
+  const HEADER_BYTES = 32;
+
+  // Until the first real frame arrives, show a clean placeholder so users who
+  // open the page during sensor init don't see an empty void.
+  document.body.classList.add('waiting');
+  let H = 0, W = 0, B = 128;
+  let cellCtx = [], cellPk = [];
+  let last_t = performance.now();
+  let smoothed_fps = 0;
+  let max_seen = 1;
+  let lastFrame = null;
+  let lastRgbUrl = null;
+  let lastDepthUrl = null;
+  let ws = null;
+  let hasRgbStream = false;
+  let hasDepthStream = false;
+  let showRgb = true, showDepth = true;
+
+  $('t-rgb').addEventListener('click', () => { showRgb = !showRgb; updatePanes(); });
+  $('t-depth').addEventListener('click', () => { showDepth = !showDepth; updatePanes(); });
+  // Light/dark theme toggle (persisted across reloads).
+  const setTheme = (t) => {
+    document.documentElement.classList.toggle('light', t === 'light');
+    $('t-theme').textContent = t === 'light' ? '☀' : '☾';
+    localStorage.setItem('theme', t);
+  };
+  setTheme(localStorage.getItem('theme') || 'dark');
+  $('t-theme').addEventListener('click', () => {
+    setTheme(document.documentElement.classList.contains('light') ? 'dark' : 'light');
+  });
+  ['ymax','binmin','binmax','logy'].forEach(id => {
+    $(id).addEventListener('input', () => { if (lastFrame) render(lastFrame); });
+  });
+
+  function updatePanes() {
+    const r = hasRgbStream && showRgb;
+    const d = hasDepthStream && showDepth;
+    $('pane-rgb').classList.toggle('hidden', !r);
+    $('pane-depth').classList.toggle('hidden', !d);
+    mainEl.classList.toggle('with-side', r || d);
+    $('t-rgb').classList.toggle('active', r);
+    $('t-depth').classList.toggle('active', d);
+    $('t-rgb').disabled = !hasRgbStream;
+    $('t-depth').disabled = !hasDepthStream;
+  }
+
+  // `cellOutputIdx[i]` maps grid cell i → histogram output index it should
+  // render. For custom masks with auto-added dummy pixels, the GUI only
+  // displays user zones; dummy pixels stay in the saved data but are
+  // hidden in the live view.
+  let cellOutputIdx = [];
+
+  function buildGrid(h, w) {
+    document.body.classList.remove('waiting');
+    grid.innerHTML = '';
+    ['rows-1','rows-2','rows-3'].forEach(c => grid.classList.remove(c));
+    H = h; W = w;
+    cellCtx = []; cellPk = []; cellOutputIdx = [];
+
+    // output_labels is always populated server-side (one entry per histogram
+    // axis). Custom masks with auto-added dummy pixels strip those and
+    // collapse to a 1×N row of user zones. Predefined modes and dummy-free
+    // custom masks keep the natural (h, w) layout.
+    const labels = (cachedMeta && Array.isArray(cachedMeta.output_labels))
+        ? cachedMeta.output_labels : null;
+    const hasDummies = labels && labels.some(l => l.is_dummy);
+    let render_h, render_w, items;
+    if (hasDummies) {
+      const userOnly = labels.filter(l => !l.is_dummy);
+      render_h = 1;
+      render_w = Math.max(1, userOnly.length);
+      items = userOnly.map(l => ({
+        label: l.label,
+        output_index: l.index,
+        title: `user zone ${l.user_zone_id}`,
+      }));
+    } else if (labels && labels.length === h * w) {
+      // Natural grid, but use the server's labels.
+      render_h = h; render_w = w;
+      items = labels.map(l => ({
+        label: l.label,
+        output_index: l.index,
+        title: '',
+      }));
+    } else {
+      render_h = h; render_w = w;
+      items = [];
+      for (let r = 0; r < h; r++) {
+        for (let c = 0; c < w; c++) {
+          items.push({label: `[${r},${c}]`, output_index: r * w + c, title: ''});
+        }
+      }
+    }
+
+    grid.style.gridTemplateColumns = `repeat(${render_w}, minmax(0, 1fr))`;
+    if (render_h <= 3) grid.classList.add(`rows-${render_h}`);
+
+    for (const it of items) {
+      const cell = document.createElement('div');
+      cell.className = 'cell user';
+      const titleAttr = it.title ? `title="${it.title}"` : '';
+      cell.innerHTML = `
+        <div class="label" ${titleAttr}><span class="name">${it.label}</span><span class="pk"></span></div>
+        <canvas></canvas>`;
+      grid.appendChild(cell);
+      const cv = cell.querySelector('canvas');
+      const rect = cv.getBoundingClientRect();
+      cv.width  = Math.floor(rect.width  * window.devicePixelRatio);
+      cv.height = Math.floor(rect.height * window.devicePixelRatio);
+      cellCtx.push(cv.getContext('2d'));
+      cellPk.push(cell.querySelector('.pk'));
+      cellOutputIdx.push(it.output_index);
+    }
+  }
+
+  function getRange() {
+    const lo = Math.max(0, parseInt($('binmin').value) || 0);
+    const hi = Math.min(B - 1, parseInt($('binmax').value || (B-1)));
+    return [lo, hi >= lo ? hi : (B - 1)];
+  }
+
+  function drawCell(ctx, hist, off, lo, hi, logY, denom) {
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#58a6ff';
+    const n = hi - lo + 1;
+    const bw = w / n;
+    if (logY) {
+      for (let i = 0; i < n; i++) {
+        const v = hist[off + lo + i];
+        if (v <= 0) continue;
+        const bh = Math.max(1, (Math.log1p(v) / denom) * (h - 2));
+        ctx.fillRect(i * bw, h - bh, bw, bh);
+      }
+    } else {
+      for (let i = 0; i < n; i++) {
+        const v = hist[off + lo + i];
+        if (v <= 0) continue;
+        const bh = Math.max(1, (v / denom) * (h - 2));
+        ctx.fillRect(i * bw, h - bh, bw, bh);
+      }
+    }
+  }
+
+  // Track which output_labels were used at the last buildGrid to detect
+  // when to rebuild (e.g. labels arrived from /meta AFTER the first frame).
+  let lastLabelsKey = '';
+  function render(frame) {
+    const { index, ts, h, w, b, hist, rgbBlobUrl, depthBlobUrl } = frame;
+    const labelsKey = (cachedMeta && Array.isArray(cachedMeta.output_labels))
+        ? `${h}x${w}|` + cachedMeta.output_labels.map(l => `${l.index}:${l.is_dummy?'d':'u'}`).join(',')
+        : `${h}x${w}`;
+    if (h !== H || w !== W || labelsKey !== lastLabelsKey) {
+      lastLabelsKey = labelsKey;
+      buildGrid(h, w);
+    }
+    B = b;
+    const [lo, hi] = getRange();
+    const logY = $('logy').checked;
+    const ymaxManual = parseFloat($('ymax').value);
+    // Peak/total are computed over displayed cells only: user zones for
+    // custom masks, every cell otherwise. Auto-added dummy-pixel histograms
+    // remain in `hist` for the saved data, but are excluded from the live
+    // grid and from these aggregates.
+    let peak = 0, total = 0;
+    for (let ci = 0; ci < cellOutputIdx.length; ci++) {
+      const off = cellOutputIdx[ci] * b;
+      for (let i = lo; i <= hi; i++) {
+        const v = hist[off + i];
+        if (v > peak) peak = v;
+        total += v;
+      }
+    }
+    max_seen = Math.max(peak, max_seen * 0.95);
+    const vmax = (Number.isFinite(ymaxManual) && ymaxManual > 0) ? ymaxManual : max_seen;
+    const denom = logY ? Math.log1p(vmax) : vmax;
+    for (let ci = 0; ci < cellOutputIdx.length; ci++) {
+      const off = cellOutputIdx[ci] * b;
+      let pp = 0;
+      for (let i = lo; i <= hi; i++) { const v = hist[off + i]; if (v > pp) pp = v; }
+      cellPk[ci].textContent = pp;
+      drawCell(cellCtx[ci], hist, off, lo, hi, logY, denom);
+    }
+    $('frame_idx').textContent = index;
+    $('peak').textContent = peak;
+    $('sum').textContent = total;
+    $('last').textContent = new Date(ts * 1000).toLocaleTimeString();
+
+    if (rgbBlobUrl) {
+      if (lastRgbUrl) URL.revokeObjectURL(lastRgbUrl);
+      rgbImg.src = rgbBlobUrl;
+      lastRgbUrl = rgbBlobUrl;
+      if (!hasRgbStream) { hasRgbStream = true; updatePanes(); }
+    }
+    if (depthBlobUrl) {
+      if (lastDepthUrl) URL.revokeObjectURL(lastDepthUrl);
+      depthImg.src = depthBlobUrl;
+      lastDepthUrl = depthBlobUrl;
+      if (!hasDepthStream) { hasDepthStream = true; updatePanes(); }
+    }
+  }
+
+  function parseFrame(buf) {
+    const dv = new DataView(buf);
+    const index = dv.getUint32(0, true);
+    const h = dv.getUint32(4, true);
+    const w = dv.getUint32(8, true);
+    const b = dv.getUint32(12, true);
+    const ts = dv.getFloat64(16, true);
+    const rgbSize = dv.getUint32(24, true);
+    const depthSize = dv.getUint32(28, true);
+    const histBytes = h * w * b * 4;
+    const hist = new Int32Array(buf, HEADER_BYTES, h * w * b);
+    let off = HEADER_BYTES + histBytes;
+    let rgbBlobUrl = null, depthBlobUrl = null;
+    if (rgbSize > 0) {
+      const v = new Uint8Array(buf, off, rgbSize);
+      rgbBlobUrl = URL.createObjectURL(new Blob([v], { type: 'image/jpeg' }));
+      off += rgbSize;
+    }
+    if (depthSize > 0) {
+      const v = new Uint8Array(buf, off, depthSize);
+      depthBlobUrl = URL.createObjectURL(new Blob([v], { type: 'image/jpeg' }));
+    }
+    return { index, ts, h, w, b, hist, rgbBlobUrl, depthBlobUrl };
+  }
+
+  // Decouple WS receive from paint: keep only the freshest frame and render it
+  // on the next animation tick. New frames arriving faster than rAF replace the
+  // pending one rather than queue, so the GUI never lags behind the stream.
+  let pending = null;
+  let rafScheduled = false;
+  function scheduleRender() {
+    if (rafScheduled) return;
+    rafScheduled = true;
+    requestAnimationFrame(() => {
+      rafScheduled = false;
+      if (!pending) return;
+      const f = pending; pending = null;
+      render(f);
+      const now = performance.now();
+      const inst = 1000 / Math.max(1, now - last_t);
+      smoothed_fps = smoothed_fps * 0.8 + inst * 0.2;
+      $('fps').textContent = smoothed_fps.toFixed(1);
+      last_t = now;
+    });
+  }
+  function onBinary(ev) {
+    let frame;
+    try { frame = parseFrame(ev.data); } catch (e) { console.error(e); return; }
+    lastFrame = frame;
+    // Free the dropped frame's blob URLs to prevent leaks.
+    if (pending) {
+      if (pending.rgbBlobUrl) URL.revokeObjectURL(pending.rgbBlobUrl);
+      if (pending.depthBlobUrl) URL.revokeObjectURL(pending.depthBlobUrl);
+    }
+    pending = frame;
+    scheduleRender();
+  }
+
+  let replayState = null;
+  let isReplay = false;
+  function sendCmd(s) { try { if (ws && ws.readyState === 1) ws.send(s); } catch {} }
+
+  let cachedMeta = null;
+  async function refreshMeta() {
+    try {
+      const r = await fetch('/meta');
+      const m = await r.json();
+      cachedMeta = m;
+      const tags = [`zone=${m.zone_mode}`, `range=${m.range_mode}`];
+      if (m.rgb_enabled) tags.push('rgb');
+      if (m.depth_enabled) tags.push('depth');
+      $('meta').textContent = tags.join('  ·  ');
+      $('mode-tag').textContent = m.mode || '';
+      isReplay = (m.mode === 'replay');
+      replayBar.classList.toggle('show', isReplay);
+      if (isReplay) {
+        replayState = m;
+        $('scrub').max = Math.max(0, (m.total_frames || 1) - 1);
+        // Only adopt the server-side index when the user is not actively
+        // scrubbing or typing; otherwise their input would be overwritten.
+        if (document.activeElement !== $('scrub') && document.activeElement !== $('r-jump')) {
+          $('scrub').value = m.current_index || 0;
+        }
+        $('r-idx').textContent = `${(m.current_index|0)+1} / ${m.total_frames}`;
+      }
+      // Update pane availability from meta hints (before the first frame arrives).
+      // Always re-evaluate so the toggle buttons reflect the actual capture's
+      // capabilities (greyed out when not present, and lit when on).
+      hasRgbStream = !!m.rgb_enabled || hasRgbStream;
+      hasDepthStream = !!m.depth_enabled || hasDepthStream;
+      $('t-rgb').title = hasRgbStream ? 'show/hide rgb camera pane' : 'no rgb stream in this capture';
+      $('t-depth').title = hasDepthStream ? 'show/hide depth pane' : 'no depth stream in this capture';
+      // Manual-mode capture button: visible only on live runs whose
+      // server config has capture_mode == "manual".
+      $('t-capture').hidden = !(m.mode === 'live' && m.capture_mode === 'manual');
+      updatePanes();
+    } catch (e) {}
+  }
+
+  $('r-next').addEventListener('click', () => { sendCmd('next'); setTimeout(refreshMeta, 80); });
+  $('r-prev').addEventListener('click', () => { sendCmd('prev'); setTimeout(refreshMeta, 80); });
+  // Scrub: seek live as user drags (smoother feel) AND on change.
+  $('scrub').addEventListener('input', (e) => { sendCmd(`seek ${e.target.value}`); });
+  $('scrub').addEventListener('change', (e) => { sendCmd(`seek ${e.target.value}`); setTimeout(refreshMeta, 80); });
+  // Jump-to-index: only on Enter, doesn't seek as you type.
+  $('r-jump').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const v = parseInt(e.target.value);
+      if (Number.isFinite(v)) {
+        sendCmd(`seek ${v}`);
+        setTimeout(refreshMeta, 80);
+        e.target.value = '';
+      }
+    }
+  });
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws`);
+    ws.binaryType = 'arraybuffer';
+    const stat = $('status');
+    ws.onopen  = () => { stat.textContent = 'live'; stat.title = 'streaming from device'; stat.classList.add('ok'); stat.classList.remove('stop'); };
+    ws.onclose = () => { stat.textContent = 'offline'; stat.title = 'disconnected, retrying every 1 s'; stat.classList.add('stop'); stat.classList.remove('ok'); setTimeout(connect, 1000); };
+    ws.onerror = () => { stat.textContent = 'offline'; stat.title = 'connection error'; stat.classList.add('stop'); };
+    ws.onmessage = (ev) => { if (ev.data instanceof ArrayBuffer) onBinary(ev); };
+    setInterval(() => { try { ws.send('ping'); } catch {} }, 25000);
+  }
+
+  // Manual mode trigger. The button is shown only when /meta reports
+  // capture_mode === 'manual'; sending the text frame enqueues one burst
+  // server-side, exactly the same trigger as pressing Enter in the screen.
+  function sendCaptureTrigger() {
+    try { ws.send(JSON.stringify({type: 'capture'})); } catch {}
+    const btn = $('t-capture');
+    if (btn) {
+      btn.classList.add('active');
+      setTimeout(() => btn.classList.remove('active'), 250);
+    }
+  }
+  $('t-capture').addEventListener('click', sendCaptureTrigger);
+  document.addEventListener('keydown', (e) => {
+    // Space-bar shortcut for "click capture", but only when no input has focus.
+    if (e.key === ' ' && !$('t-capture').hidden &&
+        document.activeElement?.tagName !== 'INPUT') {
+      e.preventDefault();
+      sendCaptureTrigger();
+    }
+  });
+
+  // ----- Mask / info modal -----
+  // Helpers
+  function fmtBytes(n) {
+    if (n == null) return '—';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024*1024) return `${(n/1024).toFixed(1)} KB`;
+    return `${(n/1024/1024).toFixed(1)} MB`;
+  }
+  function fmtSeconds(s) {
+    if (s == null) return '—';
+    if (s < 1e-6) return `${(s*1e9).toFixed(0)} ns`;
+    if (s < 1e-3) return `${(s*1e6).toFixed(1)} µs`;
+    if (s < 1) return `${(s*1000).toFixed(1)} ms`;
+    return `${s.toFixed(2)} s`;
+  }
+  function fmtIso(s) {
+    if (!s) return '—';
+    try { return new Date(s).toLocaleString(); } catch { return s; }
+  }
+  function kv(rows) {
+    return `<table class="kv-table">${rows.map(r =>
+      `<tr><th>${r[0]}</th><td${r[2]?' class="num"':''}>${r[1]}</td></tr>`
+    ).join('')}</table>`;
+  }
+
+  function renderMaskModal(meta) {
+    const body = $('mask-body');
+    const tabsEl = $('info-tabs');
+    const isReplayMeta = !!(meta && meta.replay_meta);
+
+    // LIVE mode shows a single mask-only view (no tabs).
+    // REPLAY mode renders multiple tabs.
+    if (!isReplayMeta) {
+      tabsEl.innerHTML = '';
+      $('info-title').textContent = 'mask layout';
+      renderMaskTab(body, meta);
+      return;
+    }
+
+    $('info-title').textContent = 'capture details';
+    const rm = meta.replay_meta || {};
+
+    // Tab plan (ordered by importance for the user):
+    //   Mask:        the SPAD layout (always present)
+    //   Capture:     frame count, kIter, period, range
+    //   Calibration: cal state for signal-interpretation context
+    //   Layout:      FoV, output shape, bin width
+    //   Source:      file path, version, timestamp
+    const tabs = [
+      {id: 'mask',  label: 'Mask',        render: () => renderMaskTab(body, meta)},
+      {id: 'cap',   label: 'Capture',     render: () => renderCaptureTab(body, rm)},
+      {id: 'cal',   label: 'Calibration', render: () => renderCalTab(body, rm.calibration)},
+      {id: 'lay',   label: 'Layout',      render: () => renderLayoutTab(body, rm.sensor_layout, rm.firmware)},
+      {id: 'src',   label: 'Source',      render: () => renderSourceTab(body, rm)},
+    ];
+    tabsEl.innerHTML = tabs.map((t, i) =>
+      `<button data-t="${t.id}"${i===0?' class="active"':''}>${t.label}</button>`
+    ).join('');
+    Array.from(tabsEl.querySelectorAll('button')).forEach(btn => {
+      btn.addEventListener('click', () => {
+        Array.from(tabsEl.querySelectorAll('button')).forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = tabs.find(t => t.id === btn.dataset.t);
+        if (tab) tab.render();
+      });
+    });
+    tabs[0].render();
+  }
+
+  function renderMaskTab(body, meta) {
+    const zoneMode = meta.zone_mode || '?';
+    const rangeMode = meta.range_mode || '?';
+    const zones = Array.isArray(meta.mask_zones) ? meta.mask_zones : [];
+    const isCustom = zoneMode === 'custom';
+
+    let html = `<div style="color: var(--muted); font-size: 11px; margin-bottom: 8px;">
+      zone_mode = <span style="color: var(--fg);">${zoneMode}</span>
+      &nbsp; · &nbsp; range = <span style="color: var(--fg);">${rangeMode}</span></div>`;
+
+    if (!zones.length) {
+      html += `<div style="color:var(--muted);">No SPAD layout data available for this capture.</div>`;
+      body.innerHTML = html;
+      return;
+    }
+
+    // Unified silicon-grid renderer: 12 rows × 18 cols matching AMS DS000693
+    // Fig 30/31/32. Used for predefined and custom modes alike.
+    //
+    // Rows 0 and 11 are macro-extension (not selectable with default
+    // y_offset_2=0) and are marked with 'x'. Rows 1..10 are the
+    // addressable mask area. For custom masks, rows 1..6 are single-shot
+    // writable; rows 7..10 require time-multiplexed mode (auto-promoted
+    // by the library).
+    //
+    // For time-multiplexed predefined maps (4x4, 8x8, 3x6), the same
+    // physical SPAD can be assigned to different zones in different
+    // sub-captures, so a single cell may carry more than one zone id.
+    // Overlap cells render with multiple colored dots; the tooltip lists
+    // the contributing zone ids.
+    const ROWS = 12, COLS = 18;
+    const MACRO_TOP = 0;
+    const MACRO_BOTTOM = 11;
+    const subCapOf = (zoneObj) =>
+      (zoneObj && typeof zoneObj.sub_capture === 'number') ? zoneObj.sub_capture : 0;
+    const zoneColorOf = (id) => {
+      const palette = {1:'#3b82f6',2:'#f59e0b',3:'#10b981',4:'#ef4444',
+                       5:'#8b5cf6',6:'#ec4899',7:'#14b8a6',8:'#f97316'};
+      if (id in palette) return palette[id];
+      const hue = (id * 47) % 360;
+      return `hsl(${hue},58%,48%)`;
+    };
+    const cellMap = {};                // (r,c) -> [{id, is_dummy, sub_capture}, ...]
+    let hasOverlap = false;
+    const subCapsSeen = new Set();
+    for (const z of zones) {
+      const sc = subCapOf(z);
+      subCapsSeen.add(sc);
+      for (const [r, c] of z.spads) {
+        const key = `${r},${c}`;
+        const arr = cellMap[key] || (cellMap[key] = []);
+        arr.push({id: z.id, is_dummy: z.is_dummy, sub_capture: sc});
+        if (arr.length > 1) hasOverlap = true;
+      }
+    }
+    const hasMultipleSubcaps = subCapsSeen.size > 1;
+
+    // Build a small block of colored dots, one per zone that claims this SPAD.
+    // - 1 zone → single large dot in that zone's color
+    // - 2+ zones (overlap) → multiple smaller dots, side by side
+    const dotsFor = (users) => {
+      const n = users.length;
+      const dots = users.map(u =>
+        `<span class="dot" style="background:${zoneColorOf(u.id)}"></span>`
+      ).join('');
+      return `<span class="dots">${dots}</span>`;
+    };
+    // Render the 12×18 SPAD grid. Each SPAD cell gets one small colored dot
+    // per output zone that claims it. Multiple zones → multiple dots in the
+    // same cell (the canonical 8x8 overlap pattern). Cells with no claiming
+    // zone show '·'; macro-extension rows show 'x'; dummies show 'd'.
+    let tbl = '<table class="mask-table"><tr><th></th>';
+    for (let c = 0; c < COLS; c++) tbl += `<th>${c}</th>`;
+    tbl += '</tr>';
+    for (let r = 0; r < ROWS; r++) {
+      tbl += `<tr><th class="rowlabel">r${r}</th>`;
+      for (let c = 0; c < COLS; c++) {
+        const list = cellMap[`${r},${c}`] || [];
+        const users = list.filter(x => !x.is_dummy);
+        const onlyDummies = list.length && users.length === 0;
+        // Show sub-capture annotation only when the mask uses more than one
+        // sub-cap (predefined time-mux, 8×8, or custom map_id=15).
+        const subInfo = (z) => hasMultipleSubcaps ? ` · sub-cap ${z.sub_capture}` : '';
+        if (onlyDummies) {
+          tbl += `<td class="zone" title="dummy pixel (placeholder for device calibration)" style="opacity:.55;">d</td>`;
+        } else if (users.length === 0) {
+          if (r === MACRO_TOP || r === MACRO_BOTTOM) {
+            tbl += `<td class="dead" title="macro-extension row (not selectable)">x</td>`;
+          } else {
+            tbl += `<td>·</td>`;
+          }
+        } else if (!hasOverlap) {
+          // No overlap → filled cell with zone color + id.
+          const z = users[0];
+          tbl += `<td class="zone" style="background:${zoneColorOf(z.id)}; color:#fff;" title="(${r},${c}) → zone ${z.id}${subInfo(z)}">${z.id}</td>`;
+        } else {
+          // Overlap (e.g. 8×8) → colored dots, one per claiming zone.
+          const nDots = Math.min(users.length, 4);
+          const title = users.length === 1
+            ? `(${r},${c}) → zone ${users[0].id}${subInfo(users[0])}`
+            : `(${r},${c}) → zones ${users.map(u => u.id).join(', ')}${hasMultipleSubcaps ? ' · sub-caps ' + users.map(u => u.sub_capture).join(', ') : ''}`;
+          tbl += `<td class="spad n-${nDots}" title="${title}">${dotsFor(users)}</td>`;
+        }
+      }
+      tbl += '</tr>';
+    }
+    tbl += '</table>';
+    html += tbl;
+
+    const userZones = zones.filter(z => !z.is_dummy);
+    const dums = zones.filter(z => z.is_dummy);
+    html += `<div class="mask-legend">`;
+    const shownLegend = Math.min(userZones.length, 4);
+    for (let i = 0; i < shownLegend; i++) {
+      const sw = `<span class="swatch" style="background:${zoneColorOf(userZones[i].id)};"></span>`;
+      html += `<span>${sw}zone ${userZones[i].id}</span>`;
+    }
+    if (userZones.length > shownLegend) {
+      html += `<span style="color:var(--muted);">…${userZones.length - shownLegend} more</span>`;
+    }
+    if (hasOverlap) {
+      html += `<span>stacked dots = SPAD shared by multiple zones</span>`;
+    }
+    if (dums.length) html += `<span><span style="opacity:.55">d</span> = dummy pixel</span>`;
+    html += `<span><span style="opacity:.4">x</span> = unselectable</span>`;
+    html += `<span>· = unused</span>`;
+    html += `</div>`;
+
+    html += `<div style="margin-top:14px; font-size:11px; color:var(--muted);">AMS 12×18 visual frame (DS000693 Fig 30/31/32) · row 0 = top of scene, col 0 = left</div>`;
+
+    body.innerHTML = html;
+  }
+
+  function renderCaptureTab(body, rm) {
+    const cap = rm.capture || {};
+    const fw = rm.firmware || {};
+    const applied = (rm.sensor_layout && rm.sensor_layout.firmware_applied) || {};
+    const rgb = rm.rgb || {};
+    // Prefer the device's #Conf-reported value (carries the firmware-baked
+    // default when the user didn't override); fall back to the user config.
+    const kiter = applied.kilo_iterations ?? fw.kilo_iterations;
+    const period = applied.period_ms ?? fw.period_ms;
+    const tagFor = (field) => fw[field] != null ? 'user override' : 'firmware default';
+    const fmtApplied = (val, field, fmt) =>
+      val == null ? '—' : `${fmt(val)} <span style="color:var(--muted);">· ${tagFor(field)}</span>`;
+    const rows = [
+      ['frames captured', rm.frames ?? '—'],
+      ['mode', cap.mode ?? '—'],
+      ['target frames', cap.num_frames ?? '—', true],
+      ['duration', cap.duration_s != null ? `${cap.duration_s} s` : '—', true],
+      ['interval', `${cap.interval_s ?? 0} s`, true],
+      ['samples per frame', cap.samples_per_frame ?? 1, true],
+      ['kilo_iterations',
+        fmtApplied(kiter, 'kilo_iterations',
+          (v) => `${v} <span style="color:var(--muted);">(≈ ${(v*1024/1e6).toFixed(1)} M VCSEL pulses/frame)</span>`),
+        true],
+      ['period', fmtApplied(period, 'period_ms', (v) => `${v} ms`), true],
+      ['rgb', rgb.enabled ? 'enabled' : 'off'],
+      ['depth saved', (rgb.enabled && rgb.save_depth) ? 'yes' : 'no'],
+    ];
+    body.innerHTML = kv(rows);
+  }
+
+  function renderCalTab(body, cal) {
+    if (!cal) {
+      body.innerHTML = '<div style="color:var(--muted);">No calibration data for this capture.</div>';
+      return;
+    }
+    let stateLine, badge;
+    if (cal.run && cal.status_code === 0x00) {
+      badge = '<span class="badge good">loaded</span>';
+      stateLine = 'Crosstalk calibration ran at startup and was matched to this mask. Histograms are crosstalk-subtracted.';
+    } else if (cal.run) {
+      badge = `<span class="badge warn">ran, not loaded (0x${(cal.status_code||0).toString(16).toUpperCase()})</span>`;
+      stateLine = 'Calibration ran but the device did not confirm a matching load. Histograms include uncompensated crosstalk.';
+    } else if (cal.requested && cal.error) {
+      badge = '<span class="badge stop">failed</span>';
+      stateLine = `Calibration requested but failed: ${cal.error}.`;
+    } else {
+      badge = '<span class="badge">device default</span>';
+      stateLine = 'No per-device calibration was loaded. Histograms include uncompensated VCSEL/optical crosstalk.';
+    }
+
+    const rows = [['state', badge]];
+    if (cal.status_code != null) {
+      rows.push(['CALIBRATION_STATUS',
+        `0x${cal.status_code.toString(16).padStart(2,'0').toUpperCase()} · ${cal.status ?? '?'}`, true]);
+    }
+    if (cal.cal_page_bytes != null) {
+      rows.push(['cal page saved', `${cal.cal_page_bytes} B (base64 in <code>calibration.cal_page_b64</code>)`, true]);
+    }
+
+    let html = kv(rows);
+    html += `<div style="margin-top:12px; padding:10px 12px; background:var(--cell-bg);
+               border: 1px solid var(--grid); border-radius:4px;
+               font-size:12px; color:var(--fg); line-height:1.5;">
+      ${stateLine}
+    </div>`;
+    html += `<div style="margin-top:8px; font-size:11px; color:var(--muted); line-height:1.5;">
+      Cal is per-device, per-mask, and lives in device RAM only. Run it with <code>spad capture --calibrate</code>
+      in a dark housing (no target within 40 cm).
+    </div>`;
+    body.innerHTML = html;
+  }
+
+  function renderLayoutTab(body, layout, firmware) {
+    if (!layout) { body.innerHTML = '<div style="color:var(--muted);">No layout data for this capture.</div>'; return; }
+    const shape = layout.output_shape ? layout.output_shape.join(' × ') : '—';
+    const nUser = layout.num_user_zones;
+    const nDummy = layout.num_dummy_pixels ?? 0;
+
+    let shapeDesc = shape;
+    if (nUser != null && nDummy > 0) {
+      shapeDesc += ` <span style="color:var(--muted); font-size:11px;">· ${nUser} user + ${nDummy} dummy</span>`;
+    } else if (nUser != null) {
+      shapeDesc += ` <span style="color:var(--muted); font-size:11px;">· ${nUser} user zone${nUser===1?'':'s'}</span>`;
+    }
+
+    // Readout: single concise row that explains how many sub-captures the
+    // device emits per frame, with mode-aware annotation.
+    const si = layout.stream_internal || {};
+    const nsub = si.num_subcaptures;
+    const cm = layout.custom_mask || {};
+    let readoutDesc = null;
+    if (nsub != null) {
+      if (nsub === 1) {
+        readoutDesc = `single-shot · 1 sub-capture per frame`;
+      } else if (layout.zone_mode === '8x8') {
+        readoutDesc = `time-multiplexed · ${nsub} sub-captures per frame (4 × 4×4 measurements stitched into one 8×8)`;
+      } else if (cm.mode_used && cm.mode_used.includes('time')) {
+        readoutDesc = `time-multiplexed · ${nsub} sub-captures per frame (SPAD-1 + SPAD-2 pages alternate)`;
+      } else {
+        readoutDesc = `time-multiplexed · ${nsub} sub-captures per frame`;
+      }
+    }
+
+    const rows = [];
+    if (layout.zone_mode != null) rows.push(['zone mode', layout.zone_mode]);
+    if (layout.spad_map_id != null) rows.push(['SPAD map ID', layout.spad_map_id, true]);
+    if (layout.output_shape) rows.push(['output shape', shapeDesc, true]);
+    if (layout.range_mode != null) rows.push(['range mode', layout.range_mode]);
+    if (readoutDesc) rows.push(['readout', readoutDesc, true]);
+    if (cm.mode_used) rows.push(['custom-mask mode', cm.mode_used, true]);
+    if (nDummy > 0) {
+      rows.push(['dummy pixels',
+        `${nDummy} placeholder${nDummy===1?'':'s'} added so every TDC channel pair carries a zone, which the device requires for electrical calibration. Hidden from the live grid; strip on read with <code>storage.user_zone_histograms()</code>.`]);
+    }
+    body.innerHTML = kv(rows);
+  }
+
+  function renderSourceTab(body, rm) {
+    const rows = [
+      ['source file', rm.source ?? '—'],
+      ['frames in file', rm.frames ?? '—', true],
+      ['created at', fmtIso(rm.created_at)],
+      ['spad_capture version', rm.version ?? '—'],
+    ];
+    body.innerHTML = kv(rows);
+  }
+
+  $('t-mask').addEventListener('click', () => {
+    // Show the modal first so the table has real dimensions when
+    // renderMaskTab draws the SVG overlay (otherwise getBoundingClientRect
+    // returns zeros and the outlines collapse to a point).
+    $('mask-modal').classList.add('show');
+    renderMaskModal(cachedMeta || {});
+  });
+  $('mask-close').addEventListener('click', () => $('mask-modal').classList.remove('show'));
+  $('mask-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'mask-modal') $('mask-modal').classList.remove('show');
+  });
+
+  refreshMeta();
+  setInterval(refreshMeta, 1000);
+  connect();
+})();
+</script>
+</body>
+</html>
