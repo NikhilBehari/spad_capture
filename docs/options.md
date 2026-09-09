@@ -13,7 +13,7 @@ defaults are listed below; CLI flags override the file.
 | `baudrate` | `2000000` | Must match the sketch. |
 | `timeout_s` | `1.0` | Serial read timeout. |
 | `init_wait_s` | `1.5` | Wait after open for the Arduino auto-reset. |
-| `calibrate` | `false` | Run factory crosstalk calibration on the active mask at startup (adds ~3 s). See [Calibration](#calibration). CLI shortcut: `--calibrate`. |
+| `calibrate` | `false` | Run factory crosstalk calibration on the active mask at startup (adds ~3 s). See [Calibration](#calibration). CLI: `--calibrate` / `--no-calibrate`. |
 
 ### Zone modes
 
@@ -287,7 +287,35 @@ for the session only.
 
 ## CLI
 
-Every config field has a matching CLI flag. See `spad capture --help`.
+CLI flags override the config file, which overrides the defaults:
+
+```bash
+spad capture -c configs/8x8.yaml --range short --name run_3
+```
+
+| Config field | Flag |
+|---|---|
+| `name` | `--name` |
+| `sensor.zone_mode` | `--zone` |
+| `sensor.range_mode` | `--range` |
+| `sensor.port` | `--port` |
+| `sensor.calibrate` | `--calibrate` / `--no-calibrate` |
+| `firmware.kilo_iterations` | `--kilo-iter` |
+| `firmware.period_ms` | `--period-ms` |
+| `capture.mode` | `--mode` |
+| `capture.num_frames` | `-n`, `--num-frames` |
+| `capture.duration_s` | `-d`, `--duration` |
+| `capture.interval_s` | `-i`, `--interval` |
+| `capture.samples_per_frame` | `--samples-per-frame` |
+| `storage.format` | `-f`, `--format` |
+| `storage.root` | `-o`, `--output-dir` |
+| `viz.enabled` | `--viz` / `--no-viz` |
+| `viz.port` | `--viz-port` |
+| `viz.host` | `--bind-all` (sets `0.0.0.0`) |
+| `rgb.enabled` | `--rgb` / `--no-rgb` |
+| `rgb.save_depth` | `--save-depth` / `--no-save-depth` |
+| `mask` | `-m`, `--mask` (also sets `zone_mode=custom`) |
+
 Common patterns:
 
 ```bash

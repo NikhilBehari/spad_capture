@@ -15,47 +15,49 @@ from spad_capture.viz.server import run_with_viz  # noqa: F401  (re-exported for
 _ZONE_CHOICES = [m.value for m in ZoneMode]
 
 
+# Maps a CLI keyword to the config path it overrides. Single source of truth
+# for the flag <-> config-field correspondence documented in
+# docs/options.md § CLI. A flag left unset (None) leaves the config
+# untouched, so boolean pairs like --viz/--no-viz override in both
+# directions.
+_OVERRIDES: dict[str, tuple[str, ...]] = {
+    "name":              ("name",),
+    "port":              ("sensor", "port"),
+    "zone":              ("sensor", "zone_mode"),
+    "range_":            ("sensor", "range_mode"),
+    "calibrate":         ("sensor", "calibrate"),
+    "kilo_iter":         ("firmware", "kilo_iterations"),
+    "period_ms":         ("firmware", "period_ms"),
+    "mode":              ("capture", "mode"),
+    "num_frames":        ("capture", "num_frames"),
+    "duration":          ("capture", "duration_s"),
+    "interval":          ("capture", "interval_s"),
+    "samples_per_frame": ("capture", "samples_per_frame"),
+    "fmt":               ("storage", "format"),
+    "output_dir":        ("storage", "root"),
+    "viz":               ("viz", "enabled"),
+    "viz_port":          ("viz", "port"),
+    "rgb":               ("rgb", "enabled"),
+    "save_depth":        ("rgb", "save_depth"),
+}
+
+
 def _override(cfg: Config, **kw) -> Config:
-    """Apply scalar CLI overrides to a loaded config."""
+    """Apply CLI overrides to a loaded config.
+
+    Each entry of ``_OVERRIDES`` maps a CLI keyword to its config path.
+    ``None`` means the flag was not supplied and the config value stands;
+    every other value (including ``False`` and ``0``) is applied.
+    """
     data = cfg.model_dump()
-    if kw.get("port") is not None:
-        data["sensor"]["port"] = kw["port"]
-    if kw.get("zone") is not None:
-        data["sensor"]["zone_mode"] = kw["zone"]
-    if kw.get("range_") is not None:
-        data["sensor"]["range_mode"] = kw["range_"]
-    if kw.get("mode") is not None:
-        data["capture"]["mode"] = kw["mode"]
-    if kw.get("num_frames") is not None:
-        data["capture"]["num_frames"] = kw["num_frames"]
-    if kw.get("duration") is not None:
-        data["capture"]["duration_s"] = kw["duration"]
-    if kw.get("interval") is not None:
-        data["capture"]["interval_s"] = kw["interval"]
-    if kw.get("samples_per_frame") is not None:
-        data["capture"]["samples_per_frame"] = kw["samples_per_frame"]
-    if kw.get("output_dir") is not None:
-        data["storage"]["root"] = kw["output_dir"]
-    if kw.get("fmt") is not None:
-        data["storage"]["format"] = kw["fmt"]
-    if kw.get("name") is not None:
-        data["name"] = kw["name"]
-    if kw.get("viz") is True:
-        data["viz"]["enabled"] = True
-    if kw.get("viz_port") is not None:
-        data["viz"]["port"] = kw["viz_port"]
-    if kw.get("kilo_iter") is not None:
-        data["firmware"]["kilo_iterations"] = kw["kilo_iter"]
-    if kw.get("period_ms") is not None:
-        data["firmware"]["period_ms"] = kw["period_ms"]
-    if kw.get("rgb") is True:
-        data["rgb"]["enabled"] = True
-    elif kw.get("rgb") is False:
-        data["rgb"]["enabled"] = False
-    if kw.get("save_depth") is True:
-        data["rgb"]["save_depth"] = True
-    if kw.get("calibrate") is True:
-        data["sensor"]["calibrate"] = True
+    for key, path in _OVERRIDES.items():
+        value = kw.get(key)
+        if value is None:
+            continue
+        target = data
+        for part in path[:-1]:
+            target = target[part]
+        target[path[-1]] = value
     return Config(**data)
 
 
@@ -155,9 +157,9 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
               help="Bind viz to 0.0.0.0 so other hosts on the network can connect.")
 @click.option("--rgb/--no-rgb", default=None,
               help="Enable colocated Realsense RGB capture.")
-@click.option("--save-depth", is_flag=True, default=False,
+@click.option("--save-depth/--no-save-depth", "save_depth", default=None,
               help="When --rgb is on, also save depth frames.")
-@click.option("--calibrate", is_flag=True, default=False,
+@click.option("--calibrate/--no-calibrate", "calibrate", default=None,
               help="Run factory crosstalk calibration on the active mask "
                    "before capture starts. Needs a dark housing.")
 def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, duration, interval,

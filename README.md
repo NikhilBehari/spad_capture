@@ -40,30 +40,35 @@ Add `--viz` for the live dashboard at `http://127.0.0.1:8888`.
 
 ## Key parameters
 
-The main fields tuned per capture. Every field has a matching CLI flag
-(`spad capture --help`); the full schema is in
-[docs/options.md](docs/options.md).
+The main fields tuned per capture. Set each one either in a YAML config
+or with its CLI flag; the block below lists both side by side. Common
+fields have a flag, the rest are YAML-only. Full schema and complete
+mapping: [docs/options.md](docs/options.md).
 
 ```yaml
+# YAML field: value                   # CLI flag     meaning
 sensor:
-  zone_mode: 3x3_wide | 8x8 | ...        # capture zone mode
-  range_mode: long | short               # 5m vs 1.5m mode 
+  zone_mode: 3x3_wide | 8x8 | ...     # --zone       capture zone mode
+  range_mode: long | short            # --range      5m vs 1.5m mode
 
 firmware:
-  kilo_iterations:  e.g. 5000, 20000     # per-frame pulses 
-  period_ms:        e.g. 0, 16, 100      # min frame interval
+  kilo_iterations: e.g. 5000          # --kilo-iter  per-frame pulses
+  period_ms: e.g. 0, 16               # --period-ms  min frame interval
 
 capture:
-  mode:  sequential | streaming | timed | manual  # capture type; see docs
+  mode: sequential | streaming | ...  # --mode       capture type; see docs
 
 storage:
-  format:  pkl | npy | h5 | none         # output file format
+  format: pkl | npy | h5 | none       # -f           output file format
 
 viz:
-  enabled:  true | false                 # live capture dashboard
-  host:     127.0.0.1 | 0.0.0.0          # bind host
-  port:     e.g. 8888                    # bind port
+  enabled: true | false               # --viz        live capture dashboard
+  host: 127.0.0.1 | 0.0.0.0           # --bind-all   bind host
+  port: e.g. 8888                     # --viz-port   bind port
 ```
+
+Flags override the config file:
+`spad capture -c configs/8x8.yaml --range short`.
 
 ## Custom masks
 
