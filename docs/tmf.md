@@ -1,14 +1,24 @@
-# Configuration options
+# TMF8828
 
-A single YAML config drives every run. All fields are optional. Field
-defaults are listed below; CLI flags override the file.
+AMS OSRAM TMF8828. Per-zone time-of-flight histograms from predefined SPAD
+maps or a user-defined mask. Shared fields: [docs.md](docs.md).
+
+## Commands
+
+```bash
+spad tmf flash                 # build and upload the sketch
+spad tmf capture               # capture frames
+spad tmf viz                   # dashboard; --source replays a saved run
+spad tmf mask validate PATH    # check a mask against the device rules
+spad tmf mask preview  PATH    # render a mask as ASCII
+```
 
 ## `sensor`
 
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `zone_mode` | `3x3_wide` | Predefined SPAD map (see [Zone modes](#zone-modes)) or `custom` for a user-defined mask. |
-| `range_mode` | `long` | `long` (~5 m, ~260 ps/bin) or `short` (~1 m, ~100 ps/bin). |
+| `range_mode` | `long` | `long` (4.41 m usable, 260.6 ps/bin) or `short` (1.566 m usable, 92.5 ps/bin). See [Histogram interpretation](#histogram-interpretation). |
 | `port` | `null` | Serial port, e.g. `/dev/ttyACM0`. `null` auto-detects. |
 | `baudrate` | `2000000` | Must match the sketch. |
 | `timeout_s` | `1.0` | Serial read timeout. |
@@ -49,10 +59,24 @@ datasheet Figures 30 and 31.
 
 ### Histogram interpretation
 
-- 128 time bins per channel. Bin width: ~260 ps in long range, ~100 ps in
-  short range.
-- Per-frame `t = 0` is set by the reference SPAD in the VCSEL cavity. In
-  raw histograms the reference pulse lands near bin 15.
+128 time bins per channel. Bin timing is measured against a ruler rather than
+published by AMS; long range takes its span as exactly 5 m over the 128 bins.
+
+| | bin width (round-trip) | bin distance (one-way) | usable range |
+|---|---|---|---|
+| `short` | 92.5 ps | 13.864 mm | 1.566 m |
+| `long` | 260.6 ps | 39.06 mm | 4.41 m |
+
+Per-frame `t = 0` is set by the reference SPAD in the VCSEL cavity. Range zero
+sits at **bin 15.04** in both modes, so the usable span is
+`128 - 15.04 = 112.96` bins and distance for bin `i` is:
+
+```
+distance_mm = (i - 15.04) * bin_mm
+```
+
+Each capture records this under `sensor_layout.timing` in `metadata.json`
+(`bin_width_s`, `bin_mm`, `zero_bin`, `max_range_mm`).
 
 ## `firmware`
 
@@ -134,7 +158,7 @@ mask:
 ```
 
 The `grid` form is more readable for multi-zone layouts; see
-[configs/masks/four_corners.yaml](../configs/masks/four_corners.yaml).
+[configs/tmf/masks/four_corners.yaml](../configs/tmf/masks/four_corners.yaml).
 
 ### Output shape
 
@@ -156,10 +180,8 @@ Every capture's `metadata.json` includes:
 
 - `mask`: the YAML input.
 - `resolved_zones`: the full ordered list of zones the device ran. Each
-  entry is `{output_index, user_zone_id, channel, is_dummy, spads}`.
-  Entries with `is_dummy=true` and `user_zone_id=0` are dummy pixels.
-- `user_output_indices`: indices into the histogram array that correspond
-  to user zones, in order.
+  entry is `{output_index, zone_id, channel, is_dummy, spads}`.
+  Entries with `is_dummy=true` and `zone_id=0` are dummy pixels.
 
 ### Filtering dummy pixels when loading
 
@@ -176,96 +198,6 @@ zone_ids, hists = user_zone_histograms(meta, frames)
 `spad_capture.mask.zone_index_map(mask)` returns `{user_zone_id:
 output_index}` directly from a `CustomMask`.
 
-## `capture`
-
-| Field | Default | Meaning |
-|-------|---------|---------|
-| `mode` | `sequential` | `sequential`, `streaming`, `timed`, or `manual`. |
-| `num_frames` | `10` | Frames to capture (sequential mode); frames per burst (manual mode). |
-| `duration_s` | `null` | Wall-clock duration in seconds (streaming or timed). |
-| `interval_s` | `0.0` | Sleep between frames in seconds. |
-| `samples_per_frame` | `1` | Sensor frames averaged per output frame. |
-
-### Modes
-
-- **sequential**: capture exactly `num_frames`, then stop.
-- **streaming**: capture continuously until Ctrl-C, or until `duration_s`
-  elapses if set.
-- **timed**: capture for exactly `duration_s` seconds.
-- **manual**: capture one `num_frames` burst on startup, then pause the
-  device until the next trigger. Trigger by pressing Enter in the
-  terminal, or by clicking the Capture button in the live dashboard.
-
-## `storage`
-
-Each run creates `<root>/<run_dir>/` containing:
-
-- `data.<ext>`: the frame stream
-- `config.yaml`: resolved config (re-runnable as-is)
-- `metadata.json`: capture metadata (timing, version, calibration, layout)
-
-| Field | Default | Meaning |
-|-------|---------|---------|
-| `format` | `pkl` | `pkl`, `npy`, `h5`, or `none`. |
-| `root` | `outputs` | Top-level folder. |
-| `run_dir_template` | `{timestamp}_{zone_mode}_{range_mode}_{name}` | Subfolder name. Keys: `timestamp` (date), `zone_mode`, `range_mode`, `capture_mode`, `name`. Same-day collisions auto-suffix `_2`, `_3`, etc. |
-| `data_filename` | `data` | Data file's basename inside the run-dir. |
-| `save_metadata` | `true` | Write the `metadata.json` sidecar. |
-| `save_resolved_config` | `true` | Write the `config.yaml` sidecar. |
-
-The top-level `name` field (not part of `storage:`) sets the `{name}`
-placeholder. Leave it `null` and the placeholder collapses to nothing.
-
-### Format trade-offs
-
-| Format | Streaming | Random access | Compression | Notes |
-|--------|-----------|---------------|-------------|-------|
-| `pkl` | append-only | sequential | none | Default. Works with anything. |
-| `npy` | in-memory buffer | indexable | none | Flushes a single stack at close; companion `data_ts.npy` carries timestamps. |
-| `h5` | streamed extendable dataset | indexable | gzip | Best for long captures. |
-| `none` | n/a | n/a | n/a | Use with `--viz` for live-only runs. |
-
-Load any format back with:
-
-```python
-from spad_capture.storage import load
-metadata, frames = load("outputs/<run>/data.pkl")
-```
-
-## `viz` (live web dashboard)
-
-| Field | Default | Meaning |
-|-------|---------|---------|
-| `enabled` | `false` | Start the dashboard server alongside capture. |
-| `host` | `127.0.0.1` | Bind host. Use `0.0.0.0` or `--bind-all` to expose to the network. |
-| `port` | `8888` | Bind port. |
-| `update_hz` | `10.0` | Maximum dashboard refresh rate (frontend-side throttle). |
-
-The dashboard renders the per-zone histogram grid and, when present, the
-colocated RGB image. The same page handles live capture and saved-file
-replay; replay adds prev / next / play-pause / scrub / rate controls.
-The frontend (`spad_capture/viz/static/index.html`) consumes a binary
-`/ws` stream documented in `viz/server.py`. Replace `index.html` to
-provide a different dashboard.
-
-## `rgb` (colocated Realsense)
-
-| Field | Default | Meaning |
-|-------|---------|---------|
-| `enabled` | `false` | Open a Realsense camera alongside the SPAD. |
-| `width` | `848` | Color stream width. |
-| `height` | `480` | Color stream height. |
-| `fps` | `30` | Color frame rate. |
-| `serial_number` | `null` | Specific Realsense serial; `null` selects the first device. |
-| `save_depth` | `false` | Save depth frames aligned to color. |
-| `jpeg_quality` | `80` | JPEG quality (1 to 100) for the live preview. |
-
-If `rgb.enabled = true` and the camera fails to open, the run aborts
-before any output file is created. With `save_depth = true`, depth
-frames are captured and aligned to color through the Realsense alignment
-API. Aligned depth is stored alongside each SPAD frame in the chosen
-storage format (`pkl` or `h5`).
-
 ## Calibration
 
 The TMF8828 has no per-device factory calibration baked into silicon
@@ -278,61 +210,98 @@ per-channel VCSEL and optical crosstalk are not subtracted.
 To run calibration for a capture:
 
 ```bash
-spad capture --calibrate ...
+spad tmf capture --calibrate ...
 ```
 
 Calibration takes a few seconds and must run in a dark housing with no
 target inside 40 cm (DS000693 §7.3). The calibration lives in device RAM
 for the session only.
 
-## CLI
+## Firmware
 
-CLI flags override the config file, which overrides the defaults:
+### Architecture
+
+Two pieces of firmware are involved:
+
+| Layer | Lives in | Loaded by |
+|-------|----------|-----------|
+| **Arduino sketch.** A resident bridge that listens on the USB CDC serial link, decodes commands from the host, and drives the TMF8828 over I²C. | the Uno's flash memory | `spad tmf flash`, which builds the sketch from `spad_capture/sensors/tmf/firmware/tmf8828/` with `arduino-cli` and writes it to the Uno. Persists across power cycles. |
+| **TMF8828 application image.** The AMS-provided patch the SPAD chip executes. Two variants are compiled into the sketch: one for 8x8 mode (loaded via `e`), one for the predefined zone maps and custom masks (loaded via `E`). | the TMF8828's volatile RAM | the Arduino sketch, automatically. The image is streamed into the chip over I²C whenever the host issues `e` or `E`. |
+
+The host never talks to the TMF8828 directly. All capture-time settings,
+the mask payload, the iteration count, the period, and the range mode
+flow over serial to the Arduino sketch, which translates them into I²C
+transactions.
+
+### Live-tunable parameters
+
+These knobs are issued over serial by `spad tmf capture` from the resolved
+configuration. Per-field defaults and YAML semantics live in
+[options.md § firmware](docs.md#firmware).
+
+| Parameter | YAML field | Serial command | Meaning |
+|-----------|------------|----------------|---------|
+| Zone layout | `sensor.zone_mode` | `M<id>\n` (predefined maps), `e` (TMF8828 / 8x8), or `U<id><109 bytes>` (custom mask) | Selects one of the 14 predefined SPAD maps, or installs a runtime-uploaded user mask. |
+| Range mode | `sensor.range_mode` | `O` (toggle) | `long` (260.6 ps/bin) or `short` (92.5 ps/bin). |
+| Iterations | `firmware.kilo_iterations` | `I<dec>\n` | VCSEL pulses per measurement divided by 1024. |
+| Period | `firmware.period_ms` | `P<dec>\n` | Inter-measurement period in milliseconds. |
+
+Commands take effect on the next measurement start (`m`), which `spad
+capture` issues after applying the configuration.
+
+### When the sketch must be rebuilt
+
+`spad tmf flash` recompiles `spad_capture/sensors/tmf/firmware/tmf8828/*` with
+`arduino-cli` and uploads to the detected Arduino in one step:
 
 ```bash
-spad capture -c configs/8x8.yaml --range short --name run_3
+spad tmf flash
 ```
+
+Re-running is safe at any time; the sketch is rebuilt from source each
+invocation.
+
+Sketch source changes that require a rebuild:
+
+- adding or modifying a serial-dispatcher command,
+- changing the compiled-in defaults for period, iterations, or
+  `spad_map_id`,
+- bundling a new TMF8828 patch image (the AMS firmware blob).
+
+All other configuration (zone layout, custom-mask payload, iterations,
+period, range mode) flows over serial at capture time.
+
+## CLI
 
 | Config field | Flag |
 |---|---|
-| `name` | `--name` |
+| `capture.mode` | `--mode` |
 | `sensor.zone_mode` | `--zone` |
 | `sensor.range_mode` | `--range` |
 | `sensor.port` | `--port` |
 | `sensor.calibrate` | `--calibrate` / `--no-calibrate` |
 | `firmware.kilo_iterations` | `--kilo-iter` |
 | `firmware.period_ms` | `--period-ms` |
-| `capture.mode` | `--mode` |
-| `capture.num_frames` | `-n`, `--num-frames` |
-| `capture.duration_s` | `-d`, `--duration` |
-| `capture.interval_s` | `-i`, `--interval` |
 | `capture.samples_per_frame` | `--samples-per-frame` |
-| `storage.format` | `-f`, `--format` |
-| `storage.root` | `-o`, `--output-dir` |
-| `viz.enabled` | `--viz` / `--no-viz` |
-| `viz.port` | `--viz-port` |
-| `viz.host` | `--bind-all` (sets `0.0.0.0`) |
-| `rgb.enabled` | `--rgb` / `--no-rgb` |
-| `rgb.save_depth` | `--save-depth` / `--no-save-depth` |
 | `mask` | `-m`, `--mask` (also sets `zone_mode=custom`) |
 
 Common patterns:
 
 ```bash
 # default config
-spad capture
+spad tmf capture
 
 # zone override, streaming, with live dashboard
-spad capture --zone 8x8 --mode streaming --viz
+spad tmf capture --zone 8x8 --mode streaming --viz
 
 # higher iteration count for SNR
-spad capture --zone 4x4_wide --kilo-iter 20000 -n 5
+spad tmf capture --zone 4x4_wide --kilo-iter 20000 -n 5
 
 # named run
-spad capture --name experiment_3 --zone 3x3_macro
+spad tmf capture --name experiment_3 --zone 3x3_macro
 
 # custom mask
-spad capture --mask configs/masks/four_center_quads.yaml -n 5
-spad mask validate configs/masks/four_center_quads.yaml
-spad mask preview  configs/masks/four_center_quads.yaml
+spad tmf capture --mask configs/tmf/masks/four_center_quads.yaml -n 5
+spad tmf mask validate configs/tmf/masks/four_center_quads.yaml
+spad tmf mask preview  configs/tmf/masks/four_center_quads.yaml
 ```

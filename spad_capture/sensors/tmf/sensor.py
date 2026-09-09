@@ -14,13 +14,13 @@ import queue
 import sys
 import threading
 import time
-from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 import serial
 
 from spad_capture.config import FirmwareConfig, RangeMode, SensorConfig, ZoneMode
+from spad_capture.frame import Frame
 
 # Per-map output geometry + sub-capture count.
 # height, width: zone grid shape returned to caller.
@@ -65,10 +65,16 @@ _ZONE_FOV = {
     ZoneMode.CUSTOM:               (44.0, 48.0),   # max user-area FoV (matches map 6 wide)
 }
 
-# Bin widths derived from peak-position vs distance fits, consistent
-# with the datasheet's max-range claims but not AMS-published. Calibrate
-# empirically for absolute distance accuracy.
-_TIMING_RES = {RangeMode.LONG: 260e-12, RangeMode.SHORT: 100e-12}
+# Bin timing measured against a ruler, not AMS-published. ``bin_s`` is
+# round-trip time per bin, ``bin_mm`` the one-way distance it covers.
+# Long range takes its span as exactly 5 m over the 128 bins.
+_TIMING = {
+    RangeMode.LONG:  {"bin_s": 260.6e-12, "bin_mm": 39.06},
+    RangeMode.SHORT: {"bin_s": 92.5e-12,  "bin_mm": 13.864},
+}
+# Range zero: the reference pulse sits at this bin, so bins below it are
+# before the target and the usable span is NUM_BINS - ZERO_BIN.
+ZERO_BIN = 15.04
 
 NUM_BINS = 128
 _SKIP_FIELDS = 3   # firmware row prefix: "#Raw,Count,Idx,..."
@@ -99,26 +105,6 @@ def find_arduino_port() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Public dataclasses
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class Frame:
-    """One captured frame (SPAD histogram + optional colocated RGB/depth)."""
-    index: int
-    timestamp: float
-    histogram: np.ndarray                       # (H, W, num_bins) int32
-    rgb_bgr: Optional[np.ndarray] = None        # (Hc, Wc, 3) uint8 if RGB enabled
-    depth_mm: Optional[np.ndarray] = None       # (Hc, Wc) uint16 if depth enabled
-    rgb_intrinsics: Optional[dict] = None       # fx/fy/ppx/ppy/etc
-
-    @property
-    def shape(self) -> tuple[int, int, int]:
-        return self.histogram.shape
-
-
-# ---------------------------------------------------------------------------
 # Sensor
 # ---------------------------------------------------------------------------
 
@@ -136,11 +122,11 @@ class TMF8828Sensor:
                  mask=None):
         self.config = config
         self.firmware = firmware or FirmwareConfig()
-        self.mask = mask  # spad_capture.mask.CustomMask or None
+        self.mask = mask  # spad_capture.sensors.tmf.mask.CustomMask or None
         if config.zone_mode == ZoneMode.CUSTOM:
             if mask is None:
                 raise ValueError("zone_mode='custom' requires a mask= argument.")
-            from spad_capture.mask import validate as _validate_mask
+            from spad_capture.sensors.tmf.mask import validate as _validate_mask
             v = _validate_mask(mask)
             if not v.ok:
                 raise ValueError("Custom mask invalid:\n  - " + "\n  - ".join(v.errors))
@@ -180,7 +166,8 @@ class TMF8828Sensor:
         self.num_subcaptures: int = self._info["num_subcaptures"]
         self.channels_per_subcap: list[int] = self._info["channels_per_subcap"]
         self.fov_x, self.fov_y = _ZONE_FOV[config.zone_mode]
-        self.bin_width_s = _TIMING_RES[config.range_mode]
+        self.bin_width_s = _TIMING[config.range_mode]["bin_s"]
+        self.bin_mm = _TIMING[config.range_mode]["bin_mm"]
         # Build resolved_zones: the per-zone SPAD coverage on the 12x18
         # silicon. Same shape for predefined and custom modes so the viz
         # and metadata consumers do not need to special-case either.
@@ -197,7 +184,7 @@ class TMF8828Sensor:
                     "sub_capture": rz.sub_capture,
                 })
         else:
-            from spad_capture.predefined_layouts import resolved_zones_for
+            from spad_capture.sensors.tmf.predefined_layouts import resolved_zones_for
             pre_zones = resolved_zones_for(config.zone_mode.value)
             for i, z in enumerate(pre_zones):
                 resolved_zones.append({
@@ -233,6 +220,14 @@ class TMF8828Sensor:
             "stream_internal": {
                 "num_subcaptures": self.num_subcaptures,
                 "histograms_per_subcapture": list(self.channels_per_subcap),
+            },
+            # Everything needed to put a histogram on a distance axis.
+            "timing": {
+                "num_bins": NUM_BINS,
+                "bin_width_s": self.bin_width_s,
+                "bin_mm": self.bin_mm,
+                "zero_bin": ZERO_BIN,
+                "max_range_mm": round((NUM_BINS - ZERO_BIN) * self.bin_mm, 1),
             },
         }
         if config.zone_mode == ZoneMode.CUSTOM:
@@ -401,7 +396,7 @@ class TMF8828Sensor:
 
         Mask validity is checked at __init__; this step only serializes and sends.
         """
-        from spad_capture.mask import to_bytes, to_bytes_split
+        from spad_capture.sensors.tmf.mask import to_bytes, to_bytes_split
         if self._custom_map_id == 14:
             payload = to_bytes(self.mask)
             assert len(payload) == 109
@@ -574,7 +569,7 @@ class TMF8828Sensor:
             try:
                 idx = int(row[_SKIP_FIELDS - 1])
                 data = np.array(row[_SKIP_FIELDS:], dtype=np.int32)
-            except (IndexError, ValueError):
+            except (IndexError, ValueError, OverflowError):
                 bad = True
                 continue
             if len(data) != NUM_BINS:

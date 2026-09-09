@@ -1,83 +1,118 @@
 # spad_capture
 
-Capture pipeline for the AMS OSRAM TMF8828 SPAD sensor. Records per-zone
-time-of-flight histograms from predefined or user-defined SPAD masks,
-with an integrated live web dashboard.
+Capture pipeline for SPAD time-of-flight sensors. Records per-zone histograms
+with an integrated live web dashboard, optional colocated Realsense capture
+(RGB / depth / IR), and one storage format per run.
 
-Every CLI flag can be supplied as a YAML config and passed with `-c`. See
-[docs/options.md](docs/options.md) for the full schema.
+Two sensors, one package:
+
+| backend | sensor | histograms |
+|---|---|---|
+| `spad tmf` | AMS OSRAM **TMF8828** | per-zone ToF counts from predefined or user-defined SPAD masks |
+| `spad st`  | ST **VL53L8CH** | per-zone CNH magnitudes over a configurable mm window |
+
+Everything below the sensor is shared: config loading, storage, the dashboard
+and the Realsense reader. Sensor-specific code sits under
+`spad_capture/sensors/<backend>/`.
+
+Every CLI flag can be supplied as a YAML config and passed with `-c`. Shared
+fields are in [docs/docs.md](docs/docs.md); per-sensor fields, masks and
+firmware in [docs/tmf.md](docs/tmf.md) and [docs/st.md](docs/st.md).
 
 ## Install
 
 ```bash
-# set up environment
+# one environment serves both sensors
 conda create -n spad_capture python=3.11 -y
 conda activate spad_capture
 pip install -e .
 
-# flash the dev board 
-# auto-installs required arduino-cli if missing
-spad flash
+# flash the dev board (auto-installs arduino-cli and the board core if missing)
+spad tmf flash          # Arduino + TMF8828
+spad st  flash          # NUCLEO-F401RE + X-NUCLEO-53L8A1
 ```
 
 ## Capture
 
 ```bash
-# default config - 3x3_wide, long_range, 10 frames
-spad capture
+# TMF: default config - 3x3_wide, long_range, 10 frames
+spad tmf capture
+spad tmf capture --zone 4x4_wide --range short --kilo-iter 5000 -n 20
+spad tmf capture -c configs/tmf/8x8.yaml
+spad tmf capture --mask configs/tmf/masks/four_center_quads.yaml
 
-# customize capture params
-spad capture --zone 4x4_wide --range short --kilo-iter 5000 -n 20
-
-# yaml-defined params
-spad capture -c configs/8x8.yaml
-
-# custom pixel zone mask
-spad capture --mask configs/masks/four_center_quads.yaml
+# ST: default config - 4x4, 0-2000 mm, 10 frames
+spad st capture
+spad st capture --start-mm 200 --end-mm 1200 --freq 15
+spad st capture -c configs/st/8x8.yaml
 ```
 
-Add `--viz` for the live dashboard at `http://127.0.0.1:8888`.
+Each backend has a few more commands of its own (`flash`, `viz`, and the ST's
+`detect` / `info`): [docs/tmf.md](docs/tmf.md), [docs/st.md](docs/st.md).
+
+Add `--viz` for the live dashboard at `http://127.0.0.1:8888`, and
+`--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture.
+
+Each YAML declares its `sensor:`, checked against the command it is run with,
+so a config used with the wrong backend is an error.
 
 ## Key parameters
 
-The main fields tuned per capture. Set each one either in a YAML config
-or with its CLI flag; the block below lists both side by side. Common
-fields have a flag, the rest are YAML-only. Full schema and complete
-mapping: [docs/options.md](docs/options.md).
+The main fields tuned per capture. Set each one either in a YAML config or
+with its CLI flag; the block below lists both side by side. Common fields
+have a flag, the rest are YAML-only. Full schema and complete mapping:
+[docs](docs/docs.md) · [tmf](docs/tmf.md) · [st](docs/st.md).
 
 ```yaml
 # YAML field: value                   # CLI flag     meaning
+
+# shared
+capture:
+  mode: sequential | streaming | ...  # --mode       capture type; see docs
+
+storage:
+  format: pkl | npy | h5 | npz | none # -f           output file format
+
+viz:
+  enabled: true | false               # --viz        live capture dashboard
+  port: e.g. 8888                     # --viz-port   bind port
+
+rgb:
+  enabled: true | false               # --rgb        colocated Realsense
+  save_depth: true | false            # --save-depth depth alongside colour
+  ir_left | ir_right: true | false    # --ir-left    IR planes
+
+# tmf
 sensor:
   zone_mode: 3x3_wide | 8x8 | ...     # --zone       capture zone mode
-  range_mode: long | short            # --range      5m vs 1.5m mode
+  range_mode: long | short            # --range      4.41 m vs 1.566 m
 
 firmware:
   kilo_iterations: e.g. 5000          # --kilo-iter  per-frame pulses
   period_ms: e.g. 0, 16               # --period-ms  min frame interval
 
-capture:
-  mode: sequential | streaming | ...  # --mode       capture type; see docs
-
-storage:
-  format: pkl | npy | h5 | none       # -f           output file format
-
-viz:
-  enabled: true | false               # --viz        live capture dashboard
-  host: 127.0.0.1 | 0.0.0.0           # --bind-all   bind host
-  port: e.g. 8888                     # --viz-port   bind port
+# st
+sensor:
+  mode: 4x4 | 8x8                     # --mode       zone grid
+  start_mm | end_mm: e.g. 0, 2000     # --start-mm   histogram window
+  bin_mm: e.g. 37.5348                # --bin-mm     requested bin width
+  ranging_frequency_hz: 1..30         # --freq       ranging rate
 ```
 
 Flags override the config file:
-`spad capture -c configs/8x8.yaml --range short`.
+`spad tmf capture -c configs/tmf/8x8.yaml --range short`.
 
-## Custom masks
+## Selecting zones
 
-Author SPAD layouts in YAML using the AMS 12 x 18 visual frame from
-DS000693 Fig 30/31/32. Each digit names a zone; zones with the same
-digit share one output histogram.
+Both sensors let you choose which part of the array reports a histogram; they
+just express it differently.
+
+**TMF8828 — per-pixel mask.** Author a SPAD layout in YAML on the AMS 12 x 18
+visual frame from DS000693 Fig 30/31/32. Each digit names a zone; pixels
+sharing a digit sum into one output histogram, so zones can be any shape.
 
 ```yaml
-# Custom mask, four 2x2 zones around the optical center
+# four 2x2 zones around the optical center
 mask:
   grid: |
     x x x x x x x x x x x x x x x x x x
@@ -95,27 +130,46 @@ mask:
 ```
 
 ```bash
-spad mask validate configs/masks/four_center_quads.yaml
-spad mask preview  configs/masks/four_center_quads.yaml
-spad capture --mask configs/masks/four_center_quads.yaml
+spad tmf mask validate configs/tmf/masks/four_center_quads.yaml
+spad tmf mask preview  configs/tmf/masks/four_center_quads.yaml
+spad tmf capture --mask configs/tmf/masks/four_center_quads.yaml
 ```
 
-Coordinate convention, validation rules, dummy-pixel behavior, and the
-single-shot vs. time-multiplexed split are in
-[docs/options.md § mask](docs/options.md#mask-user-defined-spad-layout-zone_modecustom-only).
+Coordinate convention, validation rules, dummy pixels, and the single-shot vs.
+time-multiplexed split:
+[docs/tmf.md § mask](docs/tmf.md#mask-user-defined-spad-layout-zone_modecustom-only).
+
+**VL53L8CH — rectangular ROI.** Select a rectangle on the fixed 4x4 or 8x8
+grid with `--zone ROW,COL` for one zone or `--roi` for a block. The device
+applies it before streaming, so frames arrive already shaped to the ROI. Fewer
+zones also free CNH memory, which buys more bins over a longer window:
+
+```bash
+spad st capture --zone 2,2 --end-mm 4000     # one zone, many bins
+spad st capture --roi 2,2,2,2                # 2x2 block
+spad st info -c configs/st/8x8.yaml          # bins and budget before capturing
+```
+
+Window, binning and the CNH budget: [docs/st.md](docs/st.md).
 
 ## Saved captures
 
-Output writes to `outputs/<run>/data.pkl` by default. Switch with `-f
-npy`, `-f h5`, or `-f none`. Trade-offs:
-[docs/options.md § storage](docs/options.md#storage).
+Output writes to `outputs/<run>/` with `metadata.json`, `config.yaml` and one
+data file: `data.pkl` by default for tmf, `data.npz` for st. Switch with `-f`.
+Trade-offs: [docs/docs.md § storage](docs/docs.md#storage).
 
 Read in Python:
 
 ```python
 from spad_capture.storage import load, user_zone_histograms
 
+# every format returns the same shape: (metadata, list of frame dicts)
 meta, frames = load("outputs/<run>/data.h5")
+frames[0]["histogram"]        # (H, W, num_bins); int32 for tmf, float32 for st
+frames[0].get("ambient")      # st only
+frames[0].get("ir_left")      # present on the frames that carried a camera plane
+
+# tmf: drop auto-added dummy-pixel zones
 zone_ids, hists = user_zone_histograms(meta, frames)
 # hists: (n_frames, n_user_zones, 128); zone_ids: e.g. [1, 2, 3, 4]
 ```
@@ -123,25 +177,12 @@ zone_ids, hists = user_zone_histograms(meta, frames)
 Replay through the dashboard:
 
 ```bash
-spad viz --source outputs/<run>/data.h5
+spad tmf viz --source outputs/<run>/data.h5
+spad st  viz --source outputs/<run>/data.npz
 ```
 
 ## Documentation
 
-- [docs/options.md](docs/options.md): every config field across `sensor`, `firmware`, `capture`, `storage`, `viz`, `rgb`, and `mask`.
-- [docs/firmware.md](docs/firmware.md): Arduino sketch architecture, serial protocol, when a re-flash is required.
-
-## Layout
-
-```
-configs/                       example YAML configs and masks
-spad_capture/
-├── config.py                  pydantic schema and YAML loader
-├── sensor.py                  TMF8828 driver
-├── mask.py                    custom-mask validator and byte serializer
-├── capture.py                 sequential / streaming / timed / manual loops
-├── storage.py                 pkl / npy / h5 writers
-├── cli.py                     click entry points
-├── firmware/tmf8828/          bundled Arduino sketch
-└── viz/                       FastAPI + WebSocket server + static dashboard
-```
+- [docs/docs.md](docs/docs.md): fields shared by both sensors.
+- [docs/tmf.md](docs/tmf.md): TMF8828 sensor fields, masks, calibration, firmware.
+- [docs/st.md](docs/st.md): VL53L8CH sensor fields, window and bins, firmware.

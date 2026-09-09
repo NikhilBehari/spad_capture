@@ -35,7 +35,7 @@ spad = "spad_capture.cli:main"
 include = ["spad_capture*"]
 
 [tool.setuptools.package-data]
-"spad_capture.firmware" = ["tmf8828/*"]
+"spad_capture.sensors.tmf.firmware" = ["tmf8828/*"]
 "spad_capture.viz"      = ["static/*"]
 
 [tool.ruff]

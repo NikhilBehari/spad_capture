@@ -43,7 +43,7 @@ that zone in the AMS datasheet figure.
 
 from __future__ import annotations
 
-from spad_capture.predefined_layouts_data import LAYOUTS
+from spad_capture.sensors.tmf.predefined_layouts_data import LAYOUTS
 
 # Per zone_mode metadata used by the Mask-tab badge: (xSize, ySize, FoV_h, FoV_v).
 _FOV_BY_MODE = {
@@ -159,7 +159,7 @@ def build_zone_meta(
     if not resolved:
         if zone_mode_value == "custom" and mask_dict:
             try:
-                from spad_capture.mask import CustomMask, preview as _preview, validate as _validate
+                from spad_capture.sensors.tmf.mask import CustomMask, preview as _preview, validate as _validate
                 m = CustomMask(**mask_dict)
                 v = _validate(m)
                 out["mask_preview"] = _preview(m)

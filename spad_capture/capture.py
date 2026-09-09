@@ -16,7 +16,8 @@ from rich.progress import (BarColumn, Progress, TaskProgressColumn, TextColumn,
 from rich.table import Table
 
 from spad_capture.config import CaptureMode, Config
-from spad_capture.sensor import Frame, TMF8828Sensor
+from spad_capture.frame import Frame
+from spad_capture.sensors.tmf.sensor import TMF8828Sensor
 from spad_capture.storage import Writer, make_writer
 
 try:
@@ -30,10 +31,12 @@ _console = Console()
 FrameCallback = Callable[[Frame], None]
 
 
-def _install_sigint_handler(stop_flag: dict) -> None:
+def _install_stop_handlers(stop_flag: dict) -> None:
+    """Stop cleanly on Ctrl-C or a kill, so buffered frames still reach disk."""
     def _handler(_sig, _frm):
         stop_flag["stop"] = True
     signal.signal(signal.SIGINT, _handler)
+    signal.signal(signal.SIGTERM, _handler)
 
 
 def run_capture(
@@ -41,7 +44,6 @@ def run_capture(
     *,
     frame_callback: Optional[FrameCallback] = None,
     writer: Optional[Writer] = None,
-    viz_urls: Optional[list[str]] = None,
     trigger_queue: Optional[_queue.Queue] = None,
 ) -> int:
     """Run the configured capture loop. Returns the number of frames captured.
@@ -52,12 +54,12 @@ def run_capture(
     stdin. Each trigger writes ``cfg.capture.num_frames`` frames to disk.
     """
     stop = {"stop": False}
-    _install_sigint_handler(stop)
+    _install_stop_handlers(stop)
 
     # Validate the custom mask (if any) BEFORE touching disk so an invalid
     # mask fails without leaving an empty output dir behind.
     if cfg.mask is not None:
-        from spad_capture.mask import validate as _validate_mask
+        from spad_capture.sensors.tmf.mask import validate as _validate_mask
         m = cfg.resolved_mask()
         v = _validate_mask(m)
         if not v.ok:
@@ -76,10 +78,10 @@ def run_capture(
     # Open the RGB camera (if requested) before creating the writer/output dir,
     # so a missing camera aborts before any output file is created.
     rgb_cam = None
-    if cfg.rgb.enabled:
+    if cfg.rgb.active:
         if RealsenseCamera is None:
             raise RuntimeError(
-                "rgb.enabled = true but pyrealsense2 is not importable. "
+                "Realsense capture requested but pyrealsense2 is not importable. "
                 "Install it or set rgb.enabled = false."
             )
         try:
@@ -102,7 +104,7 @@ def run_capture(
                 "requested": cfg.sensor.calibrate,
                 "run": False,
             }))
-            _print_banner(cfg, sensor, rgb_cam, writer, viz_urls)
+            _print_banner(cfg, sensor, rgb_cam, writer)
             ctx = dict(rgb_cam=rgb_cam, trigger_queue=trigger_queue)
             if cfg.capture.mode == CaptureMode.SEQUENTIAL:
                 n_done = _run_sequential(cfg, sensor, writer, frame_callback, stop, ctx)
@@ -115,17 +117,18 @@ def run_capture(
             else:
                 raise ValueError(f"Unknown capture mode: {cfg.capture.mode}")
     finally:
+        # Close in the finally so an aborted capture still flushes: NpyWriter
+        # buffers every frame in RAM, and HdfWriter leaves the file unflushed.
         if rgb_cam is not None:
             rgb_cam.close()
+        if own_writer:
+            writer.close()
 
-    if own_writer:
-        writer.close()
     _console.print(f"\n[bold green]done[/bold green]  captured {n_done} frames  →  [cyan]{writer.run_dir}[/cyan]")
     return n_done
 
 
-def _print_banner(cfg: Config, sensor: TMF8828Sensor, rgb_cam, writer: Writer,
-                  viz_urls: Optional[list[str]]) -> None:
+def _print_banner(cfg: Config, sensor: TMF8828Sensor, rgb_cam, writer: Writer) -> None:
     """Render the opening configuration summary."""
     tbl = Table.grid(padding=(0, 2))
     tbl.add_column(style="dim", width=8)
@@ -176,10 +179,12 @@ def _capture_and_dispatch(
     frame = sensor.capture(samples=cfg.capture.samples_per_frame)
     rgb_cam = ctx.get("rgb_cam")
     if rgb_cam is not None:
-        rgb = rgb_cam.latest(timeout_ms=200)
+        rgb = rgb_cam.latest()
         if rgb is not None:
             frame.rgb_bgr = rgb.color_bgr
             frame.depth_mm = rgb.depth_mm
+            frame.ir_left = rgb.ir_left
+            frame.ir_right = rgb.ir_right
             frame.rgb_intrinsics = rgb.intrinsics
     if write:
         writer.write(frame)

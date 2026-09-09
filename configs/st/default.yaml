@@ -1,0 +1,41 @@
+# spad_capture_st default config. Every field shown is its default.
+# All capture-window fields are in physical units (one-way mm / Hz / ms);
+# native CNH bin width is 37.53 mm and bin_mm is rounded to a multiple of it.
+
+name: null
+
+sensor:
+  mode: "4x4"                # 4x4 (16 zones) | 8x8 (64 zones)
+  start_mm: 0.0              # near edge of the capture window
+  end_mm: 2000.0            # far edge of the capture window
+  bin_mm: 37.5348           # native bin (bf=1): full temporal resolution, 53 bins
+  ranging_frequency_hz: 15  # 1..30 (CNH cap)
+  integration_time_ms: 20   # 2-1000 ms; exposure lever in AUTONOMOUS mode only. In continuous (the default below) the device auto-integrates to the ranging period and this is ignored.
+  ranging_mode: "continuous"   # continuous | autonomous
+  zone: null                # single output zone [row, col], e.g. [3, 4]; null = full grid
+  roi: null                 # rectangular ROI {start_row, start_col, rows, cols}; used only when zone is null
+  port: null                # null = auto-detect ST-LINK VCP (VID 0x0483)
+  baudrate: 921600
+  timeout_s: 2.0
+  init_wait_s: 2.0          # settle time after MCU reset before handshake
+
+capture:
+  mode: "stream"            # stream | manual
+  num_frames: 10            # stream: stop after N (if duration_s null); manual: burst size
+  duration_s: null          # stream: stop after this many seconds (overrides num_frames)
+  interval_s: 0.0           # stream only: sleep between frames (ignored in manual mode)
+  sum_frames: false         # manual: display the burst SUM (raw frames still saved individually)
+
+storage:
+  format: "npz"             # npz | none
+  root: "outputs"
+  run_dir_template: "{timestamp}_{mode}_{name}"
+  data_filename: "data"
+  save_metadata: true
+  save_resolved_config: true
+
+viz:
+  enabled: false
+  host: "127.0.0.1"
+  port: 8888
+  update_hz: 15.0

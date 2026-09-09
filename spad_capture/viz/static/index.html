@@ -173,6 +173,8 @@
       <label title="plot counts on a log scale"><input id="logy" type="checkbox" /> log-y</label>
       <button class="toggle" id="t-rgb" disabled title="no rgb stream in this capture">rgb</button>
       <button class="toggle" id="t-depth" disabled title="no depth stream in this capture">depth</button>
+      <button class="toggle" id="t-ir" disabled title="no ir stream in this capture">ir-L</button>
+      <button class="toggle" id="t-ir-right" disabled title="no ir stream in this capture">ir-R</button>
       <button class="toggle" id="t-capture" hidden title="trigger a manual-mode burst (writes num_frames frames to disk)">capture</button>
       <button class="toggle" id="t-mask" title="show mask layout and capture info">info</button>
       <button class="toggle" id="t-theme" title="toggle light / dark theme">☾</button>
@@ -197,6 +199,14 @@
       <div class="pane" id="pane-depth">
         <h3>depth (aligned to rgb)</h3>
         <img id="depth-img" alt="depth" />
+      </div>
+      <div class="pane" id="pane-ir">
+        <h3>ir-left camera</h3>
+        <img id="ir-img" alt="ir-left" />
+      </div>
+      <div class="pane" id="pane-ir-right">
+        <h3>ir-right camera</h3>
+        <img id="ir-right-img" alt="ir-right" />
       </div>
     </div>
   </main>
@@ -228,7 +238,7 @@
   const replayBar = $('replay-bar');
 
   // Wire-format constants (must match server.py _HEADER "<IIIIdII").
-  const HEADER_BYTES = 32;
+  const HEADER_BYTES = 48;
 
   // Until the first real frame arrives, show a clean placeholder so users who
   // open the page during sensor init don't see an empty void.
@@ -243,11 +253,15 @@
   let lastDepthUrl = null;
   let ws = null;
   let hasRgbStream = false;
+  let hasIrStream = false, hasIrRightStream = false;
+  let lastIrUrl = null, lastIrRightUrl = null;
   let hasDepthStream = false;
-  let showRgb = true, showDepth = true;
+  let showRgb = true, showDepth = true, showIr = true, showIrRight = true;
 
   $('t-rgb').addEventListener('click', () => { showRgb = !showRgb; updatePanes(); });
   $('t-depth').addEventListener('click', () => { showDepth = !showDepth; updatePanes(); });
+  $('t-ir').addEventListener('click', () => { showIr = !showIr; updatePanes(); });
+  $('t-ir-right').addEventListener('click', () => { showIrRight = !showIrRight; updatePanes(); });
   // Light/dark theme toggle (persisted across reloads).
   const setTheme = (t) => {
     document.documentElement.classList.toggle('light', t === 'light');
@@ -265,13 +279,20 @@
   function updatePanes() {
     const r = hasRgbStream && showRgb;
     const d = hasDepthStream && showDepth;
+    const il = hasIrStream && showIr, ir2 = hasIrRightStream && showIrRight;
     $('pane-rgb').classList.toggle('hidden', !r);
     $('pane-depth').classList.toggle('hidden', !d);
-    mainEl.classList.toggle('with-side', r || d);
+    mainEl.classList.toggle('with-side', r || d || il || ir2);
+    $('pane-ir').classList.toggle('hidden', !il);
+    $('pane-ir-right').classList.toggle('hidden', !ir2);
     $('t-rgb').classList.toggle('active', r);
     $('t-depth').classList.toggle('active', d);
     $('t-rgb').disabled = !hasRgbStream;
     $('t-depth').disabled = !hasDepthStream;
+    $('t-ir').classList.toggle('active', il);
+    $('t-ir-right').classList.toggle('active', ir2);
+    $('t-ir').disabled = !hasIrStream;
+    $('t-ir-right').disabled = !hasIrRightStream;
   }
 
   // `cellOutputIdx[i]` maps grid cell i → histogram output index it should
@@ -343,6 +364,16 @@
     }
   }
 
+  // ST sends normalised float magnitudes; TMF sends integer photon counts.
+  function fmtMag(v) {
+    if (!Number.isFinite(v)) return '—';
+    if (v === 0) return '0';
+    const a = Math.abs(v);
+    if (a >= 1e6 || a < 1e-2) return v.toExponential(2);
+    if (a >= 100) return v.toFixed(0);
+    return v.toFixed(2);
+  }
+
   function getRange() {
     const lo = Math.max(0, parseInt($('binmin').value) || 0);
     const hi = Math.min(B - 1, parseInt($('binmax').value || (B-1)));
@@ -376,7 +407,9 @@
   // when to rebuild (e.g. labels arrived from /meta AFTER the first frame).
   let lastLabelsKey = '';
   function render(frame) {
-    const { index, ts, h, w, b, hist, rgbBlobUrl, depthBlobUrl } = frame;
+    const { index, ts, h, w, b, hist, isFloat, wireFps,
+            rgbBlobUrl, depthBlobUrl, irBlobUrl, irRightBlobUrl } = frame;
+    const fmtVal = isFloat ? fmtMag : (v) => String(v);
     const labelsKey = (cachedMeta && Array.isArray(cachedMeta.output_labels))
         ? `${h}x${w}|` + cachedMeta.output_labels.map(l => `${l.index}:${l.is_dummy?'d':'u'}`).join(',')
         : `${h}x${w}`;
@@ -408,12 +441,12 @@
       const off = cellOutputIdx[ci] * b;
       let pp = 0;
       for (let i = lo; i <= hi; i++) { const v = hist[off + i]; if (v > pp) pp = v; }
-      cellPk[ci].textContent = pp;
+      cellPk[ci].textContent = fmtVal(pp);
       drawCell(cellCtx[ci], hist, off, lo, hi, logY, denom);
     }
     $('frame_idx').textContent = index;
-    $('peak').textContent = peak;
-    $('sum').textContent = total;
+    $('peak').textContent = fmtVal(peak);
+    $('sum').textContent = fmtVal(total);
     $('last').textContent = new Date(ts * 1000).toLocaleTimeString();
 
     if (rgbBlobUrl) {
@@ -428,31 +461,51 @@
       lastDepthUrl = depthBlobUrl;
       if (!hasDepthStream) { hasDepthStream = true; updatePanes(); }
     }
+    if (irBlobUrl) {
+      if (lastIrUrl) URL.revokeObjectURL(lastIrUrl);
+      $('ir-img').src = irBlobUrl;
+      lastIrUrl = irBlobUrl;
+      if (!hasIrStream) { hasIrStream = true; updatePanes(); }
+    }
+    if (irRightBlobUrl) {
+      if (lastIrRightUrl) URL.revokeObjectURL(lastIrRightUrl);
+      $('ir-right-img').src = irRightBlobUrl;
+      lastIrRightUrl = irRightBlobUrl;
+      if (!hasIrRightStream) { hasIrRightStream = true; updatePanes(); }
+    }
+    // A backend that measures its own rate wins over the client estimate.
+    if (wireFps > 0) $('fps').textContent = wireFps.toFixed(1);
   }
 
+  // Wire frame (48 B header, little-endian):
+  //   u16 version | u8 dtype (0 = i32 counts, 1 = f32 magnitudes) | u8 flags (bit0 = ambient)
+  //   u32 index | u32 H | u32 W | u32 B | f64 ts | f32 fps
+  //   u32 rgb | u32 depth | u32 irLeft | u32 irRight
+  // then H*W*B histogram, optional H*W f32 ambient, then the JPEGs in order.
   function parseFrame(buf) {
     const dv = new DataView(buf);
-    const index = dv.getUint32(0, true);
-    const h = dv.getUint32(4, true);
-    const w = dv.getUint32(8, true);
-    const b = dv.getUint32(12, true);
-    const ts = dv.getFloat64(16, true);
-    const rgbSize = dv.getUint32(24, true);
-    const depthSize = dv.getUint32(28, true);
-    const histBytes = h * w * b * 4;
-    const hist = new Int32Array(buf, HEADER_BYTES, h * w * b);
-    let off = HEADER_BYTES + histBytes;
-    let rgbBlobUrl = null, depthBlobUrl = null;
-    if (rgbSize > 0) {
-      const v = new Uint8Array(buf, off, rgbSize);
-      rgbBlobUrl = URL.createObjectURL(new Blob([v], { type: 'image/jpeg' }));
-      off += rgbSize;
-    }
-    if (depthSize > 0) {
-      const v = new Uint8Array(buf, off, depthSize);
-      depthBlobUrl = URL.createObjectURL(new Blob([v], { type: 'image/jpeg' }));
-    }
-    return { index, ts, h, w, b, hist, rgbBlobUrl, depthBlobUrl };
+    const dtype = dv.getUint8(2), flags = dv.getUint8(3);
+    const index = dv.getUint32(4, true);
+    const h = dv.getUint32(8, true);
+    const w = dv.getUint32(12, true);
+    const b = dv.getUint32(16, true);
+    const ts = dv.getFloat64(20, true);
+    const wireFps = dv.getFloat32(28, true);
+    const sizes = [32, 36, 40, 44].map(o => dv.getUint32(o, true));
+    const nhist = h * w * b;
+    const hist = dtype === 1 ? new Float32Array(buf, HEADER_BYTES, nhist)
+                             : new Int32Array(buf, HEADER_BYTES, nhist);
+    let off = HEADER_BYTES + nhist * 4;
+    let ambient = null;
+    if (flags & 1) { ambient = new Float32Array(buf, off, h * w); off += h * w * 4; }
+    const blob = (sz) => {
+      const u = new Uint8Array(buf, off, sz); off += sz;
+      return URL.createObjectURL(new Blob([u], { type: 'image/jpeg' }));
+    };
+    const [rgbBlobUrl, depthBlobUrl, irBlobUrl, irRightBlobUrl] =
+      sizes.map(sz => sz > 0 ? blob(sz) : null);
+    return { index, ts, wireFps, isFloat: dtype === 1, h, w, b, hist, ambient,
+             rgbBlobUrl, depthBlobUrl, irBlobUrl, irRightBlobUrl };
   }
 
   // Decouple WS receive from paint: keep only the freshest frame and render it
@@ -502,8 +555,8 @@
       if (m.rgb_enabled) tags.push('rgb');
       if (m.depth_enabled) tags.push('depth');
       $('meta').textContent = tags.join('  ·  ');
-      $('mode-tag').textContent = m.mode || '';
-      isReplay = (m.mode === 'replay');
+      $('mode-tag').textContent = m.mode_label || '';
+      isReplay = (m.mode_label === 'replay');
       replayBar.classList.toggle('show', isReplay);
       if (isReplay) {
         replayState = m;
@@ -524,7 +577,7 @@
       $('t-depth').title = hasDepthStream ? 'show/hide depth pane' : 'no depth stream in this capture';
       // Manual-mode capture button: visible only on live runs whose
       // server config has capture_mode == "manual".
-      $('t-capture').hidden = !(m.mode === 'live' && m.capture_mode === 'manual');
+      $('t-capture').hidden = !(m.mode_label === 'live' && m.capture_mode === 'manual');
       updatePanes();
     } catch (e) {}
   }
@@ -604,6 +657,30 @@
     ).join('')}</table>`;
   }
 
+  // Resolved geometry for a backend without a per-pixel mask (ST).
+  function renderSensorTab(body, m) {
+    const f = (v, d = 1) => (v == null ? '—' : Number(v).toFixed(d));
+    const rows = [
+      ['grid', (m.height != null && m.width != null)
+        ? `${m.height} × ${m.width}  (${m.zones ?? m.height * m.width} zones)` : '—', true],
+      ['window', (m.start_mm != null && m.end_mm != null)
+        ? `${f(m.start_mm)} – ${f(m.end_mm)} mm` : '—', true],
+      ['num bins', m.num_bins ?? '—', true],
+      ['start bin', m.start_bin ?? '—', true],
+      ['binning factor', m.binning_factor ?? '—', true],
+      ['effective bin', m.effective_bin_mm != null ? `${f(m.effective_bin_mm)} mm` : '—', true],
+      ['native bin', m.native_bin_mm != null ? `${f(m.native_bin_mm)} mm` : '—', true],
+      ['ranging freq', m.ranging_frequency_hz != null ? `${m.ranging_frequency_hz} Hz` : '—', true],
+      ['integration', m.integration_time_ms != null ? `${m.integration_time_ms} ms` : '—', true],
+      ['ranging mode', m.ranging_mode ?? '—'],
+    ];
+    if (m.budget_bytes != null) {
+      rows.push(['CNH budget',
+        `${m.budget_bytes}${m.budget_limit != null ? ` / ${m.budget_limit}` : ''} B`, true]);
+    }
+    body.innerHTML = kv(rows);
+  }
+
   function renderMaskModal(meta) {
     const body = $('mask-body');
     const tabsEl = $('info-tabs');
@@ -613,8 +690,13 @@
     // REPLAY mode renders multiple tabs.
     if (!isReplayMeta) {
       tabsEl.innerHTML = '';
-      $('info-title').textContent = 'mask layout';
-      renderMaskTab(body, meta);
+      if (meta && meta.num_bins != null && !meta.mask_zones) {
+        $('info-title').textContent = 'sensor';
+        renderSensorTab(body, meta);
+      } else {
+        $('info-title').textContent = 'mask layout';
+        renderMaskTab(body, meta);
+      }
       return;
     }
 

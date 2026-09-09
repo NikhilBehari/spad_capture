@@ -16,7 +16,8 @@ Wire format (binary; sent via send_bytes):
     +depth  u8 *D       JPEG-encoded colorized depth (D bytes)
 
 ``VizServer.publish(frame)`` is the only hook the capture loop calls.
-Swap ``static/index.html`` to replace the dashboard.
+One dashboard serves every backend: the wire header carries a dtype and
+flags, so int32 counts and float32 magnitudes render through the same page.
 """
 
 from __future__ import annotations
@@ -40,11 +41,17 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from spad_capture.config import Config, VizConfig
-from spad_capture.sensor import Frame
+from spad_capture.frame import Frame
 
 
 STATIC_DIR = Path(__file__).parent / "static"
-_HEADER = struct.Struct("<IIIIdII")   # idx, H, W, B, timestamp, rgb_size, depth_size
+# Wire header. Versioned and dtype-tagged so one dashboard serves any backend:
+# TMF histograms are int32 counts, ST are float32 CNH magnitudes.
+_WIRE_VERSION = 1
+_BROADCAST_TIMEOUT_S = 2.0   # self-heal if a send never clears the in-flight guard
+_HEADER = struct.Struct("<HBBIIIIdfIIII")
+# version, dtype (0=i32, 1=f32), flags (bit0 = ambient present),
+# index, H, W, B, timestamp, fps, rgb_size, depth_size, ir_left_size, ir_right_size
 
 
 _cv2 = None
@@ -144,20 +151,27 @@ def viz_urls(cfg: VizConfig) -> list[str]:
 
 def _frame_to_bytes(frame: Frame, jpeg_quality: int = 80) -> bytes:
     h, w, b = frame.histogram.shape
-    hist = np.ascontiguousarray(frame.histogram, dtype=np.int32)
-    rgb_bytes = _encode_jpeg(frame.rgb_bgr, quality=jpeg_quality) if frame.rgb_bgr is not None else b""
-    depth_bytes = _encode_depth(frame.depth_mm) if frame.depth_mm is not None else b""
+    f32 = frame.histogram.dtype.kind == "f"
+    hist = np.ascontiguousarray(frame.histogram, dtype=np.float32 if f32 else np.int32)
+    amb = None if frame.ambient is None else np.ascontiguousarray(frame.ambient, dtype=np.float32)
+    rgb = _encode_jpeg(frame.rgb_bgr, quality=jpeg_quality) if frame.rgb_bgr is not None else b""
+    depth = _encode_depth(frame.depth_mm) if frame.depth_mm is not None else b""
+    irl = _encode_jpeg(frame.ir_left, quality=jpeg_quality) if frame.ir_left is not None else b""
+    irr = _encode_jpeg(frame.ir_right, quality=jpeg_quality) if frame.ir_right is not None else b""
     header = _HEADER.pack(
-        int(frame.index), h, w, b, float(frame.timestamp),
-        len(rgb_bytes), len(depth_bytes),
+        _WIRE_VERSION, 1 if f32 else 0, 1 if amb is not None else 0,
+        int(frame.index), h, w, b, float(frame.timestamp), float(frame.fps),
+        len(rgb), len(depth), len(irl), len(irr),
     )
-    return header + hist.tobytes(order="C") + rgb_bytes + depth_bytes
+    body = hist.tobytes(order="C") + (amb.tobytes(order="C") if amb is not None else b"")
+    return header + body + rgb + depth + irl + irr
 
 
 class VizServer:
     """Background FastAPI + WebSocket server with a ``publish`` hook."""
 
-    def __init__(self, cfg: VizConfig, sensor_meta: Optional[dict] = None, *, jpeg_quality: int = 80):
+    def __init__(self, cfg: VizConfig, sensor_meta: Optional[dict] = None, *,
+                 jpeg_quality: int = 80):
         self.cfg = cfg
         self.sensor_meta = sensor_meta or {}
         self.jpeg_quality = jpeg_quality
@@ -174,6 +188,16 @@ class VizServer:
         # burst (cfg.capture.num_frames saved). WS clients post a
         # {"type": "capture"} text frame to enqueue a trigger.
         self.capture_triggers: _queue.Queue = _queue.Queue()
+        # Encoding runs on its own thread, so the capture loop does not block on it.
+        self._frame_lock = threading.Lock()
+        self._latest_frame: Optional[Frame] = None
+        self._frame_gen = 0
+        self._sent_gen = -1
+        self._display_stop = threading.Event()
+        self._display_thread: Optional[threading.Thread] = None
+        self._display_dt = 1.0 / max(cfg.update_hz, 1.0)
+        self._broadcasting = False
+        self._broadcast_at = 0.0
         self._build_routes()
 
     def _build_routes(self) -> None:
@@ -188,10 +212,10 @@ class VizServer:
         async def meta() -> dict:
             m = dict(self.sensor_meta)
             if self.replay is not None:
-                m["mode"] = "replay"
+                m["mode_label"] = "replay"
                 m.update(self.replay.snapshot())
             else:
-                m["mode"] = "live"
+                m["mode_label"] = "live"
             return m
 
         @app.websocket("/ws")
@@ -234,25 +258,60 @@ class VizServer:
     # ------------------------------------------------------------------
 
     def publish(self, frame: Frame) -> None:
-        """Push a frame to all connected clients. Safe to call from any thread."""
-        payload = _frame_to_bytes(frame, jpeg_quality=self.jpeg_quality)
-        with self._lock:
-            self._latest_bytes = payload
-        if not self._loop or not self._clients:
+        """Stash the latest frame for the display thread. Safe from any thread.
+
+        No encoding happens here, so a fast capture loop is not slowed by the
+        dashboard.
+        """
+        with self._frame_lock:
+            self._latest_frame = frame
+            self._frame_gen += 1
+
+    def _display_loop(self) -> None:
+        """Encode and broadcast the newest frame at viz.update_hz.
+
+        Coalesces to the latest frame since the last tick, and skips a tick while
+        a prior send is still draining a slow client, so latency stays bounded
+        instead of a backlog growing over the socket.
+        """
+        while not self._display_stop.wait(self._display_dt):
+            if self._broadcasting and time.monotonic() - self._broadcast_at < _BROADCAST_TIMEOUT_S:
+                continue
+            with self._frame_lock:
+                frame, gen = self._latest_frame, self._frame_gen
+            if frame is None or gen == self._sent_gen:
+                continue
+            self._sent_gen = gen
+            payload = _frame_to_bytes(frame, jpeg_quality=self.jpeg_quality)
+            with self._lock:
+                self._latest_bytes = payload
+            self._broadcast(payload)
+
+    def _broadcast(self, payload: bytes) -> None:
+        """Send to every client once, on the server's event loop."""
+        loop = self._loop
+        if loop is None or not loop.is_running() or not self._clients:
             return
-        async def _broadcast(p: bytes) -> None:
-            dead = []
-            for ws in list(self._clients):
-                try:
-                    await ws.send_bytes(p)
-                except Exception:
-                    dead.append(ws)
-            for ws in dead:
-                self._clients.discard(ws)
+
+        async def _send() -> None:
+            try:
+                dead = []
+                for ws in list(self._clients):
+                    try:
+                        await ws.send_bytes(payload)
+                    except Exception:
+                        dead.append(ws)
+                for ws in dead:
+                    self._clients.discard(ws)
+            finally:
+                self._broadcasting = False
+
+        self._broadcasting = True
+        self._broadcast_at = time.monotonic()
         try:
-            asyncio.run_coroutine_threadsafe(_broadcast(payload), self._loop)
+            asyncio.run_coroutine_threadsafe(_send(), loop)
         except RuntimeError:
-            pass
+            self._broadcasting = False
 
     def start(self) -> None:
         """Start uvicorn in a background thread."""
@@ -275,8 +334,17 @@ class VizServer:
             if self._server.started:
                 break
             time.sleep(0.05)
+        self._display_thread = threading.Thread(
+            target=self._display_loop, name="viz-display", daemon=True)
+        self._display_thread.start()
 
     def stop(self) -> None:
+        self._display_stop.set()
+        if self._display_thread is not None:
+            self._display_thread.join(timeout=2.0)
+        # Drop references so the camera planes are not pinned after shutdown.
+        self._latest_frame = None
+        self._latest_bytes = None
         if self._server is not None:
             self._server.should_exit = True
         if self._thread is not None:
@@ -399,7 +467,7 @@ def run_with_viz(cfg: Config, capture_fn) -> int:
     # documented SPAD area, custom from the mask resolver. The live viz
     # renders labels and the mask modal immediately without waiting on the
     # sensor to finish configuring.
-    from spad_capture.predefined_layouts import build_zone_meta as _build_zm
+    from spad_capture.sensors.tmf.predefined_layouts import build_zone_meta as _build_zm
     sensor_meta.update(_build_zm(cfg.sensor.zone_mode.value, cfg.mask))
     server = VizServer(
         cfg.viz,
@@ -421,7 +489,6 @@ def run_with_viz(cfg: Config, capture_fn) -> int:
         return capture_fn(
             cfg,
             frame_callback=server.publish,
-            viz_urls=urls,
             trigger_queue=server.capture_triggers,
         )
     finally:

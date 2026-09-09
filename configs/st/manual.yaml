@@ -1,0 +1,22 @@
+# 4x4 manual mode. Captures one burst of num_frames at startup, then STOPS
+# ranging so the device is idle (nothing streams between triggers). Each
+# trigger (Enter on stdin, or the dashboard Capture button) restarts ranging,
+# captures another burst of num_frames, and stops again, until Ctrl-C.
+
+name: "manual"
+
+sensor:
+  mode: "4x4"
+  start_mm: 0.0
+  end_mm: 2000.0
+  bin_mm: 37.5348          # native bin (bf=1): full temporal resolution, 53 bins
+
+capture:
+  mode: "manual"
+  num_frames: 25          # frames captured per trigger burst
+
+storage:
+  format: "npz"
+
+viz:
+  enabled: true           # dashboard Capture button triggers a burst

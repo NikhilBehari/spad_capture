@@ -1,4 +1,8 @@
-"""Frame writers. Select via config.storage.format: pkl | npy | h5 | none."""
+"""Frame writers. Select via config.storage.format: pkl | npy | h5 | npz | none.
+
+A backend config needs only ``name``, ``storage`` and ``template_vars()``.
+Backends add formats with ``register_writer``.
+"""
 
 from __future__ import annotations
 
@@ -13,8 +17,9 @@ from typing import Any, Optional
 import numpy as np
 import yaml
 
-from spad_capture.config import Config, StorageFormat
-from spad_capture.sensor import Frame
+from pydantic import BaseModel
+
+from spad_capture.frame import Frame
 
 
 def _spad_capture_version() -> str:
@@ -33,24 +38,16 @@ def _metadata_to_json(meta: dict) -> str:
     return re.sub(r"\[\s*(-?\d+),\s*(-?\d+)\s*\]", r"[\1, \2]", raw)
 
 
-def _render_run_dir(template: str, cfg: Config) -> str:
+def _render_run_dir(template: str, cfg: Any) -> str:
+    """Render the run-dir name. The sensor supplies its own template values."""
     import re
-    # zone_mode is "3x3_wide", "4x4_narrow_v3", ...; underscores collide with
-    # the folder-name separator, so strip them: "3x3wide", "4x4narrowv3".
-    zone_compact = cfg.sensor.zone_mode.value.replace("_", "")
-    # range_mode is "long" / "short" on its own; appending "range" makes the
-    # folder name self-documenting: "longrange" / "shortrange".
-    range_compact = f"{cfg.sensor.range_mode.value}range"
     rendered = template.format(
         timestamp=datetime.now().strftime("%Y%m%d"),
-        zone_mode=zone_compact,
-        range_mode=range_compact,
-        capture_mode=cfg.capture.mode.value,
         name=cfg.name or "",
+        **cfg.template_vars(),
     )
     # Collapse consecutive separators left by an empty {name} placeholder.
-    rendered = re.sub(r"_+", "_", rendered).rstrip("_")
-    return rendered
+    return re.sub(r"_+", "_", rendered).rstrip("_")
 
 
 def _resolve_run_dir(root: Path, name: str) -> Path:
@@ -68,36 +65,25 @@ def _resolve_run_dir(root: Path, name: str) -> Path:
 
 def _frame_to_record(f: Frame) -> dict[str, Any]:
     rec: dict[str, Any] = {"index": f.index, "timestamp": f.timestamp, "histogram": f.histogram}
-    if f.rgb_bgr is not None:
-        rec["rgb_bgr"] = f.rgb_bgr
-    if f.depth_mm is not None:
-        rec["depth_mm"] = f.depth_mm
+    for name in _PLANES:
+        if (plane := getattr(f, name)) is not None:
+            rec[name] = plane
     if f.rgb_intrinsics is not None:
         rec["rgb_intrinsics"] = f.rgb_intrinsics
     return rec
 
 
-def _build_metadata(cfg: Config, *, calibration: Optional[dict] = None) -> dict[str, Any]:
-    meta = {
-        "name": cfg.name,
-        "sensor": cfg.sensor.model_dump(mode="json"),
-        "firmware": cfg.firmware.model_dump(mode="json"),
-        "capture": cfg.capture.model_dump(mode="json"),
-        "storage": cfg.storage.model_dump(mode="json"),
-        "viz": cfg.viz.model_dump(mode="json"),
-        "rgb": cfg.rgb.model_dump(mode="json"),
-        "mask": cfg.mask,
-        "calibration": calibration if calibration is not None else {
-            "requested": cfg.sensor.calibrate,
-            "run": False,
-        },
-        "created_at": datetime.now().isoformat(),
-        "version": _spad_capture_version(),
-    }
-    # ``resolved_zones`` (the canonical layout: one entry per output
-    # channel, in stream order) is populated later by the sensor through
-    # ``update_layout``. The format is identical for predefined and custom
-    # modes, so downstream consumers do not have to special-case either.
+def _build_metadata(cfg: Any) -> dict[str, Any]:
+    """Dump every config section, so a new section is included without editing this."""
+    meta: dict[str, Any] = {"name": cfg.name}
+    for field in type(cfg).model_fields:
+        if field == "name":
+            continue
+        value = getattr(cfg, field)
+        meta[field] = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
+    meta["created_at"] = datetime.now().isoformat()
+    meta["version"] = _spad_capture_version()
+    # ``sensor_layout`` is stamped later by the backend through ``update_layout``.
     return meta
 
 
@@ -109,7 +95,7 @@ def _build_metadata(cfg: Config, *, calibration: Optional[dict] = None) -> dict[
 class Writer(ABC):
     """Append-style frame writer. Creates a per-run subfolder under storage.root."""
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Any):
         self.cfg = cfg
         run_name = _render_run_dir(cfg.storage.run_dir_template, cfg)
         self.run_dir = _resolve_run_dir(cfg.storage.root, run_name).expanduser().resolve()
@@ -166,7 +152,7 @@ class Writer(ABC):
 class PklWriter(Writer):
     """Append-only pickle stream; one dict per frame, metadata as first record."""
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Any):
         super().__init__(cfg)
         self._path = self.run_dir / f"{cfg.storage.data_filename}.pkl"
         self._fh = open(self._path, "wb")
@@ -188,7 +174,7 @@ class PklWriter(Writer):
 class NpyWriter(Writer):
     """In-memory buffer flushed to a single (N, H, W, B) .npy at close."""
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Any):
         super().__init__(cfg)
         self._path = self.run_dir / f"{cfg.storage.data_filename}.npy"
         self._buf: list[Frame] = []
@@ -214,9 +200,9 @@ class NpyWriter(Writer):
 
 
 class HdfWriter(Writer):
-    """Streamed HDF5 with extendable /frames, /timestamps, /metadata, optional /rgb + /depth."""
+    """Streamed HDF5 with extendable /frames, /timestamps, /metadata, optional camera planes."""
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Any):
         super().__init__(cfg)
         import h5py
         self._h5py = h5py
@@ -224,8 +210,7 @@ class HdfWriter(Writer):
         self._f = h5py.File(self._path, "w")
         self._f.create_group("metadata").attrs["json"] = json.dumps(self.metadata, default=str)
         self._frames = None
-        self._rgb = None
-        self._depth = None
+        self._planes: dict[str, Any] = {}
 
     def _rewrite_metadata(self) -> None:
         super()._rewrite_metadata()
@@ -250,20 +235,16 @@ class HdfWriter(Writer):
             self._idx = self._f.create_dataset(
                 "frame_index", shape=(0,), maxshape=(None,), dtype="i8", chunks=True,
             )
-        if frame.rgb_bgr is not None and self._rgb is None:
-            rh, rw, rc = frame.rgb_bgr.shape
-            self._rgb = self._f.create_dataset(
-                "rgb_bgr", shape=(0, rh, rw, rc), maxshape=(None, rh, rw, rc),
-                dtype="u1", chunks=(1, rh, rw, rc), compression="gzip",
+        for name, (dtype, _) in _PLANES.items():
+            plane = getattr(frame, name)
+            if plane is None or name in self._planes:
+                continue
+            self._planes[name] = self._f.create_dataset(
+                name, shape=(0, *plane.shape), maxshape=(None, *plane.shape),
+                dtype=dtype, chunks=(1, *plane.shape), compression="gzip",
             )
-            if frame.rgb_intrinsics:
-                self._f.create_group("rgb_intrinsics").attrs["json"] = json.dumps(frame.rgb_intrinsics)
-        if frame.depth_mm is not None and self._depth is None:
-            dh, dw = frame.depth_mm.shape
-            self._depth = self._f.create_dataset(
-                "depth_mm", shape=(0, dh, dw), maxshape=(None, dh, dw),
-                dtype="u2", chunks=(1, dh, dw), compression="gzip",
-            )
+        if frame.rgb_intrinsics and "rgb_intrinsics" not in self._f:
+            self._f.create_group("rgb_intrinsics").attrs["json"] = json.dumps(frame.rgb_intrinsics)
 
     def write(self, frame: Frame) -> None:
         self._ensure_datasets(frame)
@@ -271,10 +252,9 @@ class HdfWriter(Writer):
         self._frames.resize(n + 1, axis=0); self._frames[n] = frame.histogram
         self._ts.resize(n + 1, axis=0);     self._ts[n] = frame.timestamp
         self._idx.resize(n + 1, axis=0);    self._idx[n] = frame.index
-        if self._rgb is not None and frame.rgb_bgr is not None:
-            self._rgb.resize(n + 1, axis=0); self._rgb[n] = frame.rgb_bgr
-        if self._depth is not None and frame.depth_mm is not None:
-            self._depth.resize(n + 1, axis=0); self._depth[n] = frame.depth_mm
+        for name, ds in self._planes.items():
+            if (plane := getattr(frame, name)) is not None:
+                ds.resize(n + 1, axis=0); ds[n] = plane
 
     def close(self) -> None:
         if self._f:
@@ -301,18 +281,85 @@ class NullWriter(Writer):
 # ---------------------------------------------------------------------------
 
 
-_WRITERS: dict[StorageFormat, type[Writer]] = {
-    StorageFormat.PKL: PklWriter,
-    StorageFormat.NPY: NpyWriter,
-    StorageFormat.HDF5: HdfWriter,
-    StorageFormat.NONE: NullWriter,
+# Optional camera planes a Frame may carry: name -> (hdf dtype, npz index key).
+_PLANES = {
+    "rgb_bgr":  ("u1", "rgb_at"),
+    "depth_mm": ("u2", "depth_at"),
+    "ir_left":  ("u1", "ir_left_at"),
+    "ir_right": ("u1", "ir_right_at"),
 }
 
 
-def make_writer(cfg: Config) -> Writer:
+class NpzWriter(Writer):
+    """In-memory buffer flushed to a single data.npz at close."""
+
+    def __init__(self, cfg: Any):
+        super().__init__(cfg)
+        self._path = self.run_dir / f"{cfg.storage.data_filename}.npz"
+        self._buf: list[Frame] = []
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def write(self, frame: Frame) -> None:
+        self._buf.append(frame)
+
+    def close(self) -> None:
+        if not self._buf:
+            return
+        arrays: dict[str, np.ndarray] = {
+            "histograms": np.stack([f.histogram for f in self._buf]),
+            "index": np.array([f.index for f in self._buf], dtype=np.int64),
+            "device_index": np.array([f.device_index for f in self._buf], dtype=np.int64),
+            "timestamp": np.array([f.timestamp for f in self._buf], dtype=np.float64),
+            "device_ts_ms": np.array([f.device_ts_ms for f in self._buf], dtype=np.int64),
+        }
+        if all(f.ambient is not None for f in self._buf):
+            arrays["ambient"] = np.stack([f.ambient for f in self._buf]).astype(np.float32)
+        # Index-aligned camera planes: only frames carrying a modality contribute a
+        # plane plus its position, so a 20-frame burst with one attached image
+        # stores a single plane, not 20 copies.
+        for key, (_, at_key) in _PLANES.items():
+            planes = [getattr(f, key, None) for f in self._buf]
+            at = [i for i, pl in enumerate(planes) if pl is not None]
+            if at:
+                arrays[key] = np.stack([planes[i] for i in at])
+                arrays[at_key] = np.array(at, dtype=np.int64)
+        # Camera intrinsics are a constant; keep them in metadata, not the npz.
+        intrinsics = next(
+            (i for f in self._buf if (i := f.rgb_intrinsics) is not None), None)
+        if intrinsics is not None and self.metadata.get("rgb_intrinsics") != intrinsics:
+            self.metadata["rgb_intrinsics"] = intrinsics
+            self._rewrite_metadata()
+        np.savez(self._path, **arrays)
+        self._buf.clear()
+
+
+_WRITERS: dict[str, type[Writer]] = {}
+
+
+def register_writer(fmt: str, cls: type[Writer]) -> None:
+    """Register a writer for a ``storage.format`` value."""
+    _WRITERS[fmt] = cls
+
+
+def make_writer(cfg: Any) -> Writer:
     """Build the writer instance from a config."""
-    cls = _WRITERS[cfg.storage.format]
+    fmt = getattr(cfg.storage.format, "value", cfg.storage.format)
+    try:
+        cls = _WRITERS[fmt]
+    except KeyError:
+        raise ValueError(
+            f"No writer registered for storage format {fmt!r}. "
+            f"Available: {', '.join(sorted(_WRITERS))}"
+        ) from None
     return cls(cfg)
+
+
+for _fmt, _cls in (("pkl", PklWriter), ("npy", NpyWriter), ("h5", HdfWriter),
+                   ("npz", NpzWriter), ("none", NullWriter)):
+    register_writer(_fmt, _cls)
 
 
 # ---------------------------------------------------------------------------
@@ -379,15 +426,30 @@ def load(path: Path | str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             hists = f["frames"][:]
             ts = f["timestamps"][:]
             idx = f["frame_index"][:]
-            rgb = f["rgb_bgr"][:] if "rgb_bgr" in f else None
-            depth = f["depth_mm"][:] if "depth_mm" in f else None
+            planes = {k: f[k][:] for k in _PLANES if k in f}
         frames = []
         for i in range(hists.shape[0]):
             r = {"index": int(idx[i]), "timestamp": float(ts[i]), "histogram": hists[i]}
-            if rgb is not None:
-                r["rgb_bgr"] = rgb[i]
-            if depth is not None:
-                r["depth_mm"] = depth[i]
+            for k, arr in planes.items():
+                r[k] = arr[i]
+            frames.append(r)
+        return _prefer_sidecar(metadata), frames
+    if ext == "npz":
+        with np.load(p) as z:
+            data = {k: z[k] for k in z.files}
+        metadata = json.loads(sidecar.read_text()) if sidecar.exists() else {}
+        at = {name: dict(zip(data[key].tolist(), data[name]))
+              for name, (_, key) in _PLANES.items() if name in data and key in data}
+        frames = []
+        for i in range(data["histograms"].shape[0]):
+            r = {"index": int(data["index"][i]),
+                 "timestamp": float(data["timestamp"][i]),
+                 "histogram": data["histograms"][i]}
+            if "ambient" in data:
+                r["ambient"] = data["ambient"][i]
+            for name, by_frame in at.items():
+                if i in by_frame:
+                    r[name] = by_frame[i]
             frames.append(r)
         return _prefer_sidecar(metadata), frames
     raise ValueError(f"Unsupported file format: {ext}")

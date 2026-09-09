@@ -1,0 +1,20 @@
+# 8x8 mode (64 zones). The CNH budget is far tighter at 8x8: num_bins
+# caps at 18. Here bin_mm 74 mm (bf=4 -> effective 75.07 mm) over 0..1332 mm
+# gives 18 bins: 64*18*5 + 64*5 + 28 = 6108 bytes, just inside 6160.
+# Coarser bins are the cost of the larger zone grid.
+
+name: "8x8"
+
+sensor:
+  mode: "8x8"
+  start_mm: 0.0
+  end_mm: 1332.0           # bin 74 mm (bf=4 -> effective 75.07 mm) -> 18 bins (8x8 max)
+  bin_mm: 74.0
+  ranging_frequency_hz: 10  # 8x8 integrates longer; ease the frame rate
+
+capture:
+  mode: "stream"
+  num_frames: 10
+
+storage:
+  format: "npz"

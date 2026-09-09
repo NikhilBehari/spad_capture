@@ -9,7 +9,8 @@ import click
 
 from spad_capture.capture import run_capture
 from spad_capture.config import Config, ZoneMode, load_config
-from spad_capture.flash import flash as do_flash
+from spad_capture.sensors.tmf.flash import flash as do_flash
+from spad_capture.sensors.st.cli import st as _st_group
 from spad_capture.viz.server import run_with_viz  # noqa: F401  (re-exported for downstream)
 
 _ZONE_CHOICES = [m.value for m in ZoneMode]
@@ -39,6 +40,8 @@ _OVERRIDES: dict[str, tuple[str, ...]] = {
     "viz_port":          ("viz", "port"),
     "rgb":               ("rgb", "enabled"),
     "save_depth":        ("rgb", "save_depth"),
+    "ir_left":           ("rgb", "ir_left"),
+    "ir_right":          ("rgb", "ir_right"),
 }
 
 
@@ -66,7 +69,12 @@ def main() -> None:
     """spad_capture command-line interface."""
 
 
-@main.group("mask")
+@main.group("tmf")
+def tmf() -> None:
+    """AMS OSRAM TMF8828."""
+
+
+@tmf.group("mask")
 def mask_group() -> None:
     """Inspect and validate custom SPAD-mask configurations."""
 
@@ -76,7 +84,7 @@ def mask_group() -> None:
 def mask_validate_cmd(path: Path) -> None:
     """Check a mask config against the device's documented rules."""
     import yaml
-    from spad_capture.mask import CustomMask, validate, preview
+    from spad_capture.sensors.tmf.mask import CustomMask, validate, preview
     raw = yaml.safe_load(path.read_text()) or {}
     section = raw.get("mask", raw)  # accept either a full config or a bare mask dict
     if not isinstance(section, dict):
@@ -105,14 +113,14 @@ def mask_validate_cmd(path: Path) -> None:
 def mask_preview_cmd(path: Path, bbox_only: bool) -> None:
     """Render an ASCII visualization of a mask config."""
     import yaml
-    from spad_capture.mask import CustomMask, preview
+    from spad_capture.sensors.tmf.mask import CustomMask, preview
     raw = yaml.safe_load(path.read_text()) or {}
     section = raw.get("mask", raw)
     mask = CustomMask(**section)
     click.echo(preview(mask, full_area=not bbox_only))
 
 
-@main.command("flash")
+@tmf.command("flash")
 @click.option("--port", default=None, help="Serial port. Auto-detect if omitted.")
 @click.option("--arduino-cli", "arduino_cli", type=click.Path(path_type=Path), default=None,
               help="Path to the arduino-cli binary. Auto-discovered if omitted.")
@@ -122,7 +130,7 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
     do_flash(port=port, arduino_cli=arduino_cli, verbose=verbose)
 
 
-@main.command("capture")
+@tmf.command("capture")
 @click.option("-c", "--config", "config_path", type=click.Path(path_type=Path), default=None,
               help="YAML config file (defaults if omitted).")
 @click.option("-m", "--mask", "mask_path", type=click.Path(path_type=Path, exists=True), default=None,
@@ -159,12 +167,16 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
               help="Enable colocated Realsense RGB capture.")
 @click.option("--save-depth/--no-save-depth", "save_depth", default=None,
               help="When --rgb is on, also save depth frames.")
+@click.option("--ir-left/--no-ir-left", "ir_left", default=None,
+              help="Capture the left IR image (infrared 1).")
+@click.option("--ir-right/--no-ir-right", "ir_right", default=None,
+              help="Capture the right IR image (infrared 2).")
 @click.option("--calibrate/--no-calibrate", "calibrate", default=None,
               help="Run factory crosstalk calibration on the active mask "
                    "before capture starts. Needs a dark housing.")
 def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, duration, interval,
                  samples_per_frame, output_dir, fmt, name, viz, viz_port, bind_all, rgb,
-                 save_depth, calibrate, kilo_iter, period_ms) -> None:
+                 save_depth, ir_left, ir_right, calibrate, kilo_iter, period_ms) -> None:
     """Capture frames according to the config (+ optional overrides)."""
     cfg = load_config(config_path)
     cfg = _override(
@@ -174,7 +186,8 @@ def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, du
         output_dir=output_dir, fmt=fmt, name=name,
         viz=viz, viz_port=viz_port,
         kilo_iter=kilo_iter, period_ms=period_ms,
-        rgb=rgb, save_depth=save_depth, calibrate=calibrate,
+        rgb=rgb, save_depth=save_depth, ir_left=ir_left, ir_right=ir_right,
+        calibrate=calibrate,
     )
     if mask_path is not None:
         import yaml as _yaml
@@ -199,7 +212,7 @@ def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, du
         raise click.ClickException(str(e)) from None
 
 
-@main.command("viz")
+@tmf.command("viz")
 @click.option("-c", "--config", "config_path", type=click.Path(path_type=Path), default=None,
               help="YAML config file (only viz section used).")
 @click.option("--host", default=None, help="Bind host (default 127.0.0.1).")
@@ -212,7 +225,7 @@ def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, du
 def viz_cmd(config_path, host, port, bind_all, source, rate_hz) -> None:
     """Run the live viz server. With --source it replays a saved capture."""
     import time
-    from spad_capture.sensor import Frame
+    from spad_capture.frame import Frame
     from spad_capture.viz.server import VizServer
     from spad_capture.storage import load
 
@@ -224,7 +237,7 @@ def viz_cmd(config_path, host, port, bind_all, source, rate_hz) -> None:
     if port is not None:
         cfg.viz.port = port
 
-    from spad_capture.predefined_layouts import build_zone_meta as _mask_meta_for_full
+    from spad_capture.sensors.tmf.predefined_layouts import build_zone_meta as _mask_meta_for_full
 
     def _mask_meta_for(zone_mode: str, mask_dict, sensor_layout=None) -> dict:
         """Build the mask-related meta the viz uses to label outputs and
@@ -313,3 +326,6 @@ def viz_cmd(config_path, host, port, bind_all, source, rate_hz) -> None:
         if controller is not None:
             controller.stop()
         server.stop()
+
+
+main.add_command(_st_group)

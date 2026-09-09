@@ -63,7 +63,7 @@ _MAP_IDS = {
 
 
 class RangeMode(str, Enum):
-    """Distance range. LONG: ~5 m / ~260 ps/bin. SHORT: ~1 m / ~100 ps/bin."""
+    """Distance range. LONG: 260.6 ps/bin, 4.41 m. SHORT: 92.5 ps/bin, 1.566 m."""
 
     LONG = "long"
     SHORT = "short"
@@ -179,10 +179,10 @@ class StorageConfig(BaseModel):
     format: StorageFormat = StorageFormat.PKL
     root: Path = Field(default=Path("outputs"), description="Top-level output root.")
     run_dir_template: str = Field(
-        default="{timestamp}_{zone_mode}_{range_mode}_{name}",
-        description="Per-run subfolder name. Available keys: timestamp, zone_mode, "
-                    "range_mode, capture_mode, name. Consecutive underscores from "
-                    "empty placeholders are collapsed; trailing underscores are stripped.",
+        default="{timestamp}_{sensor}_{zone_mode}_{range_mode}_{name}",
+        description="Per-run subfolder name. Available keys: timestamp, sensor, "
+                    "zone_mode, range_mode, capture_mode, name. Consecutive underscores "
+                    "from empty placeholders are collapsed; trailing ones are stripped.",
     )
     data_filename: str = Field(default="data", description="Data filename inside run dir (no extension).")
     save_metadata: bool = True
@@ -219,7 +219,19 @@ class RgbConfig(BaseModel):
         default=None, description="Device serial (None = first device)."
     )
     save_depth: bool = Field(default=False, description="Also save depth frames.")
+    align_depth: bool = Field(
+        default=True,
+        description="Align depth to the color frame; requires the color stream. With "
+                    "depth-only capture there is no color target, so depth stays native.",
+    )
+    ir_left: bool = Field(default=False, description="Capture the left IR image (infrared 1).")
+    ir_right: bool = Field(default=False, description="Capture the right IR image (infrared 2).")
     jpeg_quality: int = Field(default=80, description="JPEG quality (1-100) for viz encoding.")
+
+    @property
+    def active(self) -> bool:
+        """Any Realsense stream wanted."""
+        return self.enabled or self.save_depth or self.ir_left or self.ir_right
 
 
 # ---------------------------------------------------------------------------
@@ -260,11 +272,25 @@ class Config(BaseModel):
             pass
         return self
 
+    def template_vars(self) -> dict[str, str]:
+        """Values the storage run-dir template may reference.
+
+        Underscores collide with the folder-name separator, so zone_mode is
+        compacted ("3x3_wide" -> "3x3wide") and range_mode is made
+        self-documenting ("long" -> "longrange").
+        """
+        return {
+            "sensor": "tmf",
+            "zone_mode": self.sensor.zone_mode.value.replace("_", ""),
+            "range_mode": f"{self.sensor.range_mode.value}range",
+            "capture_mode": self.capture.mode.value,
+        }
+
     def resolved_mask(self):
         """Return a validated CustomMask for the configured mask dict, or None."""
         if not self.mask:
             return None
-        from spad_capture.mask import CustomMask
+        from spad_capture.sensors.tmf.mask import CustomMask
         return CustomMask(**self.mask)
 
 

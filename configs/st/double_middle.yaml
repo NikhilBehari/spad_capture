@@ -1,0 +1,27 @@
+# Two output zones -- the two center pixels the beam actually lands on -- read out
+# SEPARATELY (not merged): each keeps its own full histogram, frames arrive shaped
+# [2 zones x num_bins]. A 2-zone ROI still leaves the CNH budget wide open, so
+# num_bins reaches 255 (the uint8 feature_length cap) at the native 37.53 mm / 250 ps
+# bin -- the finest depth resolution AND the most bins this sensor can deliver, on
+# BOTH pixels at once. Budget: 2 zones * 255 bins -> 2592 bytes of the 6160 cap.
+#
+# roi picks a rectangle by [start_row, start_col] + [rows, cols]; rows=2, cols=1 from
+# (3,4) selects the two vertically-adjacent zones (3,4) and (4,4). Retune start_row/
+# start_col if the beam lands elsewhere (a middle-pixel scan finds the hot zones).
+
+name: "double_middle"
+
+sensor:
+  mode: "8x8"
+  start_mm: 0.0
+  end_mm: 9571.4           # / 37.53 -> 255 bins (the max), ~9.57 m
+  bin_mm: 37.5348          # native bin (bf=1): full temporal resolution
+  ranging_frequency_hz: 15
+  roi: {start_row: 3, start_col: 4, rows: 2, cols: 1}   # zones (3,4) + (4,4), kept separate
+
+capture:
+  mode: "stream"
+  num_frames: 10
+
+storage:
+  format: "npz"
