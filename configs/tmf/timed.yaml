@@ -1,0 +1,21 @@
+# Continuous 3x3_wide capture with the live dashboard, for a fixed
+# 60 s. Frames are saved to a single growing HDF5.
+
+backend: tmf
+
+name: "timed"
+
+sensor:
+  zone_mode: "3x3_wide"
+  range_mode: "long"
+
+capture:
+  mode: "timed"
+  duration_s: 60
+  interval_s: 0.0
+
+storage:
+  format: "h5"
+
+viz:
+  enabled: true

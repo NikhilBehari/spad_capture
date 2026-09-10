@@ -21,18 +21,17 @@ command it is run with.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `mode` | `sequential` | `sequential`, `streaming`, `timed`, or `manual`. |
+| `mode` | `sequential` | `sequential`, `timed`, or `manual`. |
 | `num_frames` | `10` | Frames to capture (sequential mode); frames per burst (manual mode). |
-| `duration_s` | `null` | Wall-clock duration in seconds (streaming or timed). |
+| `duration_s` | `60` | Wall-clock duration in seconds (timed mode). |
 | `interval_s` | `0.0` | Sleep between frames in seconds. |
 | `samples_per_frame` | `1` | Sensor frames averaged per output frame. |
 
 ### Modes
 
 - **sequential**: capture exactly `num_frames`, then stop.
-- **streaming**: capture continuously until Ctrl-C, or until `duration_s`
-  elapses if set.
-- **timed**: capture for exactly `duration_s` seconds.
+- **timed**: capture continuously for exactly `duration_s` seconds (60 by
+  default), then stop.
 - **manual**: capture one `num_frames` burst on startup, then pause the
   device until the next trigger. Trigger by pressing Enter in the
   terminal, or by clicking the Capture button in the live dashboard.

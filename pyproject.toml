@@ -22,10 +22,12 @@ dependencies = [
   "h5py>=3.10",
   "rich>=13.0",
   "opencv-python-headless>=4.9",   # for viz JPEG encoding of RGB + depth
-  "pyrealsense2>=2.50",            # colocated Realsense RGB + aligned depth
 ]
 
 [project.optional-dependencies]
+# The Realsense binding has no macOS wheel on PyPI; conda-forge ships both
+# platforms. environment.yml installs it, so this extra is for pip-only Linux.
+rgb = ["pyrealsense2>=2.50"]
 dev = ["ruff", "pytest"]
 
 [project.scripts]

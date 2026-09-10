@@ -291,8 +291,8 @@ Common patterns:
 # default config
 spad tmf capture
 
-# zone override, streaming, with live dashboard
-spad tmf capture --zone 8x8 --mode streaming --viz
+# zone override, 30s continuous, with live dashboard
+spad tmf capture --zone 8x8 --mode timed -d 30 --viz
 
 # higher iteration count for SNR
 spad tmf capture --zone 4x4_wide --kilo-iter 20000 -n 5

@@ -1,0 +1,18 @@
+# One environment for both macOS and Linux.
+#   conda env create -f environment.yml && conda activate spad_capture
+#   pip install -e .
+name: spad_capture
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - pyrealsense2=2.58.3   # brings librealsense; the only channel serving both platforms
+  - numpy
+  - opencv
+  - pyserial
+  - pydantic
+  - pyyaml
+  - click
+  - fastapi
+  - uvicorn
+  - h5py
+  - rich

@@ -68,7 +68,7 @@ have a flag, the rest are YAML-only. Full schema and complete mapping:
 
 # shared
 capture:
-  mode: sequential | streaming | ...  # --mode       capture type; see docs
+  mode: sequential | timed | manual   # --mode       capture type; see docs
 
 storage:
   format: pkl | npy | h5 | npz | none # -f           output file format

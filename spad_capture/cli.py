@@ -147,10 +147,10 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
               help="Override firmware measurement period (ms).")
 @click.option("--range", "range_", type=click.Choice(["long", "short"]), default=None,
               help="Range-mode override.")
-@click.option("--mode", type=click.Choice(["sequential", "streaming", "timed", "manual"]), default=None,
+@click.option("--mode", type=click.Choice(["sequential", "timed", "manual"]), default=None,
               help="Capture-mode override.")
 @click.option("-n", "--num-frames", type=int, default=None, help="Sequential frame count.")
-@click.option("-d", "--duration", type=float, default=None, help="Streaming/timed duration (s).")
+@click.option("-d", "--duration", type=float, default=None, help="Timed-mode duration (s); default 60.")
 @click.option("-i", "--interval", type=float, default=None, help="Inter-frame sleep (s).")
 @click.option("--samples-per-frame", "samples_per_frame", type=int, default=None,
               help="Sensor captures averaged per output frame.")

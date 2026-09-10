@@ -126,9 +126,11 @@ class CaptureMode(str, Enum):
     """Frame-sequencing strategy."""
 
     SEQUENTIAL = "sequential"   # exactly num_frames, then stop
-    STREAMING = "streaming"     # continuous until Ctrl-C or duration_s
-    TIMED = "timed"             # for exactly duration_s seconds
+    TIMED = "timed"             # continuously for duration_s seconds
     MANUAL = "manual"           # live viz, save num_frames frames per trigger
+
+
+DEFAULT_DURATION_S = 60.0       # timed mode when duration_s is not given
 
 
 class CaptureConfig(BaseModel):
@@ -137,7 +139,8 @@ class CaptureConfig(BaseModel):
     mode: CaptureMode = CaptureMode.SEQUENTIAL
     num_frames: int = Field(default=10, description="Number of frames (sequential mode).")
     duration_s: Optional[float] = Field(
-        default=None, description="Max duration in seconds (streaming/timed)."
+        default=None,
+        description=f"Duration in seconds (timed mode; default {DEFAULT_DURATION_S:g}).",
     )
     interval_s: float = Field(
         default=0.0,
@@ -151,7 +154,7 @@ class CaptureConfig(BaseModel):
     @model_validator(mode="after")
     def _validate(self) -> "CaptureConfig":
         if self.mode == CaptureMode.TIMED and self.duration_s is None:
-            raise ValueError("'timed' capture mode requires capture.duration_s")
+            self.duration_s = DEFAULT_DURATION_S
         return self
 
 

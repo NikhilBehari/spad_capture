@@ -108,8 +108,6 @@ def run_capture(
             ctx = dict(rgb_cam=rgb_cam, trigger_queue=trigger_queue)
             if cfg.capture.mode == CaptureMode.SEQUENTIAL:
                 n_done = _run_sequential(cfg, sensor, writer, frame_callback, stop, ctx)
-            elif cfg.capture.mode == CaptureMode.STREAMING:
-                n_done = _run_streaming(cfg, sensor, writer, frame_callback, stop, ctx)
             elif cfg.capture.mode == CaptureMode.TIMED:
                 n_done = _run_timed(cfg, sensor, writer, frame_callback, stop, ctx)
             elif cfg.capture.mode == CaptureMode.MANUAL:
@@ -219,35 +217,26 @@ def _run_sequential(cfg, sensor, writer, cb, stop, ctx) -> int:
     return captured
 
 
-def _run_streaming(cfg, sensor, writer, cb, stop, ctx) -> int:
+def _run_timed(cfg, sensor, writer, cb, stop, ctx) -> int:
+    """Capture continuously for ``duration_s`` seconds, then stop on its own."""
+    total = cfg.capture.duration_s
     t0 = time.time()
-    last_print = t0
+    t_end = t0 + total
     count = 0
-    _console.print("[dim](streaming · Ctrl-C to stop)[/dim]")
-    while not stop["stop"]:
-        if cfg.capture.duration_s and (time.time() - t0) > cfg.capture.duration_s:
-            break
+    last_print = 0.0
+    _console.print(f"[dim](capturing for {total:g}s · Ctrl-C to stop early)[/dim]")
+    while not stop["stop"] and time.time() < t_end:
         f = _capture_and_dispatch(cfg, sensor, writer, cb, ctx)
         count += 1
-        if time.time() - last_print > 1.0:
-            elapsed = time.time() - t0
+        now = time.time()
+        if now - last_print > 1.0:
             _console.print(
                 f"  frame {f.index:6d}  peak={f.histogram.max():7d}  "
-                f"sum={f.histogram.sum():10d}  rate={count/elapsed:.2f}/s",
+                f"sum={f.histogram.sum():10d}  rate={count/(now-t0):.2f}/s  "
+                f"{max(0.0, t_end-now):5.1f}s left",
                 end="\r",
             )
-            last_print = time.time()
-        if cfg.capture.interval_s > 0:
-            time.sleep(cfg.capture.interval_s)
-    return count
-
-
-def _run_timed(cfg, sensor, writer, cb, stop, ctx) -> int:
-    t_end = time.time() + cfg.capture.duration_s
-    count = 0
-    while not stop["stop"] and time.time() < t_end:
-        _capture_and_dispatch(cfg, sensor, writer, cb, ctx)
-        count += 1
+            last_print = now
         if cfg.capture.interval_s > 0:
             time.sleep(cfg.capture.interval_s)
     return count
