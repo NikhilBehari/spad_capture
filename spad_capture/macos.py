@@ -27,7 +27,12 @@ IS_MAC = sys.platform == "darwin"
 _CAMERA_DAEMONS = ("VDCAssistant", "UVCAssistant", "appleh13camerad", "AppleCameraAssistant")
 
 _ATTEMPT_TIMEOUT_S = 20.0        # a blocked open never returns on its own
-_BACKOFF_S = (0.5, 1.0, 2.0, 2.0, 2.0, 0.0)  # one per attempt; the last wait is unused
+# One wait per attempt; the last is unused. Few attempts, generous waits: a
+# camera another process has just released needs seconds before it hands over
+# frames again, and every fresh attempt disturbs it, so hammering it is slower
+# than waiting. Measured: an immediate retry storm fails where a 15 s pause
+# succeeds.
+_BACKOFF_S = (2.0, 5.0, 10.0, 0.0)
 _UNPRIVILEGED_ATTEMPTS = 1       # then say plainly that root is the next step
 
 T = TypeVar("T")
@@ -112,4 +117,6 @@ def _failure_text(last: str) -> str:
                 "  brings it back.\n"
                 "  Fix: unplug the Realsense USB, wait ~2s, plug it back in, and re-run.")
     return (f"A Realsense is attached but would not open (last error: {last}).\n"
-            "  Fix: close anything else using the camera, or unplug and replug its USB.")
+            "  Fix: re-run -- a camera another process has just released needs a few\n"
+            "  seconds. Failing that, close whatever else is using it, or unplug and\n"
+            "  replug its USB.")

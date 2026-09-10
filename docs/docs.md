@@ -141,6 +141,12 @@ The open is retried, and each attempt must deliver frames before it counts:
 a Realsense can start a pipeline and then send nothing, and treating that as
 success would write a run full of empty frames.
 
+Retries are few and the waits between them are long. A camera another process
+has just released needs seconds before it will hand over frames, and each fresh
+attempt disturbs it, so a burst of quick retries does worse than a pause. The
+first capture after some long-running process gives up the camera is the one
+most likely to need a second run.
+
 If no camera enumerates at all, it has dropped off the USB bus and no amount of
 retrying brings it back. The error says so, and the fix is to unplug the USB,
 wait about two seconds and plug it back in.
