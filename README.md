@@ -32,6 +32,12 @@ spad tmf flash          # Arduino + TMF8828
 spad st  flash          # NUCLEO-F401RE + X-NUCLEO-53L8A1
 ```
 
+`environment.yml` is what makes one recipe serve both platforms: it takes
+`pyrealsense2` from conda-forge, which publishes macOS arm64 and Linux builds,
+where PyPI publishes no macOS build at all. Without a Realsense, plain
+`pip install -e .` is enough on either platform, and `pip install -e '.[rgb]'`
+adds the camera on Linux.
+
 ## Capture
 
 ```bash
