@@ -208,7 +208,7 @@ def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, du
             run_with_viz(cfg, run_capture)
         else:
             run_capture(cfg)
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, RuntimeError) as e:
         raise _clean(e) from None
 
 

@@ -312,7 +312,8 @@ def capture_cmd(config_path, port, mode, start_mm, end_mm, bin_mm, zone, roi,
             run_with_viz(cfg, run_capture)
         else:
             run_capture(cfg)
-    except (PortNotFoundError, HandshakeError, FrameError, ValueError, FileNotFoundError) as e:
+    except (PortNotFoundError, HandshakeError, FrameError, ValueError,
+            FileNotFoundError, RuntimeError) as e:
         raise _clean(e) from None
 
 
@@ -345,7 +346,8 @@ def viz_cmd(config_path, host, viz_port, bind_all, source, rate_hz) -> None:
             _replay(cfg, source, rate_hz)
             return
         run_with_viz(cfg, run_capture)
-    except (PortNotFoundError, HandshakeError, FrameError, ValueError, FileNotFoundError) as e:
+    except (PortNotFoundError, HandshakeError, FrameError, ValueError,
+            FileNotFoundError, RuntimeError) as e:
         raise _clean(e) from None
 
 
