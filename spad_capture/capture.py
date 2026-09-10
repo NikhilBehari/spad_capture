@@ -223,7 +223,7 @@ def _run_sequential(cfg, sensor, writer, cb, stop, ctx) -> int:
 
 
 def _run_timed(cfg, sensor, writer, cb, stop, ctx) -> int:
-    """Capture continuously for ``duration_s`` seconds, then stop on its own."""
+    """Capture continuously for ``duration_s`` seconds, then stop."""
     total = cfg.capture.duration_s
     t0 = time.time()
     t_end = t0 + total

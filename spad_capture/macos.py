@@ -2,13 +2,12 @@
 
 macOS routes UVC devices through camera assistant daemons that claim the
 Realsense the moment anything enumerates it. They run as a system user and
-respawn on demand, so they cannot be stopped for good: the device has to be
-released and opened from the same root process, right away. Measured here, an
-ordinary user cannot open the camera even with nothing else using it, so on
-macOS this is a hard requirement rather than a fallback.
+respawn on demand, so the device has to be released and opened from the same
+root process. Measured on this platform, an ordinary user cannot open the camera
+even with nothing else using it.
 
-The open is retried because releasing the daemons does not settle the race --
-a respawning daemon can still win the next attempt.
+Releasing the daemons does not settle the race. A respawning daemon can still
+win the next attempt, so the open is retried.
 """
 
 from __future__ import annotations
@@ -27,13 +26,11 @@ IS_MAC = sys.platform == "darwin"
 _CAMERA_DAEMONS = ("VDCAssistant", "UVCAssistant", "appleh13camerad", "AppleCameraAssistant")
 
 _ATTEMPT_TIMEOUT_S = 20.0        # a blocked open never returns on its own
-# One wait per attempt; the last is unused. Few attempts, generous waits: a
-# camera another process has just released needs seconds before it hands over
-# frames again, and every fresh attempt disturbs it, so hammering it is slower
-# than waiting. Measured: an immediate retry storm fails where a 15 s pause
-# succeeds.
+# One wait per attempt; the last is unused. Few attempts, long waits: a camera
+# another process just released needs seconds, and each attempt disturbs it.
+# Measured: an immediate retry storm fails where a 15 s pause succeeds.
 _BACKOFF_S = (2.0, 5.0, 10.0, 0.0)
-_UNPRIVILEGED_ATTEMPTS = 1       # then say plainly that root is the next step
+_UNPRIVILEGED_ATTEMPTS = 1       # then report root as the next step
 
 T = TypeVar("T")
 
@@ -65,15 +62,13 @@ def _run_attempt(open_fn: Callable[[], T], box: dict) -> None:
 def open_with_retry(open_fn: Callable[[], T], log: Optional[Callable[[str], None]] = None) -> T:
     """Call ``open_fn`` until it succeeds, releasing the macOS camera daemons between tries.
 
-    Root is not demanded up front: when nothing else holds the camera an ordinary
-    user opens it fine, and asking for more privilege than the job needs is worse
-    than trying. Only once an unprivileged open has actually failed on macOS does
-    this report that releasing the daemons -- which needs root -- is the next step.
+    Without the privilege to release the daemons, one attempt is made and the
+    failure names ``sudo`` as the next step.
 
     Each attempt is bounded. ``pipeline.start()`` can block forever when another
-    process holds the device, and a blocked call inside the native library cannot
-    be interrupted, so an attempt runs on its own thread and is abandoned once the
-    deadline passes. Abandoning is safe here only because attempts are few.
+    process holds the device, and the native call cannot be interrupted, so an
+    attempt runs on its own thread and is abandoned at the deadline. Attempts are
+    few, which bounds the abandoned threads.
     """
     can_release = not IS_MAC or os.geteuid() == 0
     if can_release:

@@ -112,23 +112,23 @@ storage format (`pkl` or `h5`).
 
 ### Dot projector
 
-The Realsense projects an IR dot pattern. Stereo depth needs it -- the dots are
-what make depth dense -- but it also stamps that pattern across the IR images.
-`ir_no_dots` holds the projector off, giving IR lit only by the scene. With
-`save_depth` set as well the projector is pulsed: on for depth, off for IR.
+The Realsense projects an IR dot pattern. Depth needs it to come out dense, and
+it stamps the same pattern across the IR images. `ir_no_dots` holds the projector
+off, leaving IR lit only by the scene. With `save_depth` set the projector is
+pulsed: on for depth, off for IR.
 
-Measured on a D435i, projector on against off: IR Laplacian variance 932 against
-37, and depth 98% valid against 41%. Dot-free IR therefore costs depth density,
-which is why the two are separate switches.
+Measured on a D435i, projector on then off: IR Laplacian variance 932 then 37,
+depth 98% valid then 41%. Dot-free IR costs depth density, so the two are
+separate switches.
 
 ### Realsense on macOS
 
 macOS routes cameras through system daemons that claim the device as soon as
-anything enumerates it. They respawn on demand, so the camera can only be opened
-by a process that can release them: **Realsense capture on macOS needs root**.
+anything enumerates it. They respawn on demand, so only a process that can
+release them opens the camera: **Realsense capture on macOS needs root**.
 
-Nothing prompts for a password. A run that needs root stops immediately and
-prints the exact command to repeat under `sudo`:
+Nothing prompts for a password. A run that needs root stops and prints the
+command to repeat under `sudo`:
 
 ```
 Could not open the Realsense as this user (last error: No device connected).
@@ -137,27 +137,24 @@ Could not open the Realsense as this user (last error: No device connected).
   Run: sudo /path/to/spad tmf capture --rgb
 ```
 
-The open is retried, and each attempt must deliver frames before it counts:
-a Realsense can start a pipeline and then send nothing, and treating that as
-success would write a run full of empty frames.
+Each open attempt must deliver frames before it counts. A Realsense can start a
+pipeline and then send nothing, which would otherwise write a run of empty
+frames.
 
-Retries are few and the waits between them are long. A camera another process
-has just released needs seconds before it will hand over frames, and each fresh
-attempt disturbs it, so a burst of quick retries does worse than a pause. The
-first capture after some long-running process gives up the camera is the one
-most likely to need a second run.
+Attempts are few and the waits between them long. A camera another process just
+released needs seconds before it delivers frames, and each attempt disturbs it.
+Expect the first capture after a long-running process releases the camera to need
+a second run.
 
-If no camera enumerates at all, it has dropped off the USB bus and no amount of
-retrying brings it back. The error says so, and the fix is to unplug the USB,
-wait about two seconds and plug it back in.
+When no camera enumerates, it has dropped off the USB bus. Unplug it, wait two
+seconds, plug it back in.
 
-One habit avoids most of those replugs: never `kill -9` a process that is
-holding the camera. Observed here, a `SIGKILL` mid-stream leaves the device in a
-power state the next open reports as `failed to set power state`, and shortly
-after it disappears from the bus. Ctrl-C and plain `kill` are handled: both
-backends catch `SIGINT` and `SIGTERM`, stop the pipeline and flush the run.
+Never `kill -9` a process holding the camera. SIGKILL mid-stream leaves it in a
+power state the next open reports as `failed to set power state`, after which it
+disappears from the bus. Both backends catch `SIGINT` and `SIGTERM`, stop the
+pipeline and flush the run.
 
-Linux needs none of this: capture runs as an ordinary user.
+Linux needs none of this.
 
 ## CLI
 

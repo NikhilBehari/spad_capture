@@ -232,8 +232,8 @@ class RgbConfig(BaseModel):
     ir_no_dots: bool = Field(
         default=False,
         description="Hold the dot projector off so the IR images show no projected "
-                    "pattern. With save_depth the projector is still pulsed on for "
-                    "depth, which needs the dots to be dense.",
+                    "pattern. With save_depth the projector is pulsed on for depth, "
+                    "which needs the dots.",
     )
     jpeg_quality: int = Field(default=80, description="JPEG quality (1-100) for viz encoding.")
 

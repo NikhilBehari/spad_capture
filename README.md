@@ -32,11 +32,9 @@ spad tmf flash          # Arduino + TMF8828
 spad st  flash          # NUCLEO-F401RE + X-NUCLEO-53L8A1
 ```
 
-`environment.yml` is what makes one recipe serve both platforms: it takes
-`pyrealsense2` from conda-forge, which publishes macOS arm64 and Linux builds,
-where PyPI publishes no macOS build at all. Without a Realsense, plain
-`pip install -e .` is enough on either platform, and `pip install -e '.[rgb]'`
-adds the camera on Linux.
+`environment.yml` takes `pyrealsense2` from conda-forge, which builds for macOS
+arm64 and Linux. PyPI has no macOS build. Without a Realsense, `pip install -e .`
+is enough on either platform; `pip install -e '.[rgb]'` adds the camera on Linux.
 
 ## Capture
 
@@ -58,9 +56,9 @@ Each backend has a few more commands of its own (`flash`, `viz`, and the ST's
 
 Add `--viz` for the live dashboard at `http://127.0.0.1:8888`, and
 `--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture.
-`--ir-no-dots` holds the dot projector off, so the IR images carry no projected
-pattern. On macOS Realsense capture needs `sudo`; the run says so and prints the
-command. See [docs/docs.md](docs/docs.md#realsense-on-macos).
+`--ir-no-dots` holds the dot projector off, leaving IR free of the projected
+pattern. Realsense capture on macOS needs `sudo`, and the run prints the command
+to repeat. See [docs/docs.md](docs/docs.md#realsense-on-macos).
 
 Each YAML declares its `backend:`, checked against the command it is run with,
 so a config used with the wrong backend is an error.

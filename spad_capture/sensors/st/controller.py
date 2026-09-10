@@ -265,8 +265,8 @@ def _print_banner(cfg: Config, device: dict, rgb_cam, writer: Writer,
             streams.append("rgb")
         if cfg.rgb.save_depth:
             streams.append("depth")
-        # Mirrors the emitter policy set at the top of this module: dots unless
-        # they were turned off, and manual mode drops them between bursts.
+        # Mirrors the emitter policy above: dots unless turned off, and manual
+        # mode drops them between bursts.
         dots = not cfg.rgb.ir_no_dots and cfg.capture.mode != CaptureMode.MANUAL
         for on, nm in ((cfg.rgb.ir_left, "ir-left"), (cfg.rgb.ir_right, "ir-right")):
             if on:

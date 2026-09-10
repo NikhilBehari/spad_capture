@@ -83,8 +83,7 @@ class RealsenseCamera:
                 rcfg.enable_stream(rs.stream.infrared, 2, cfg.width, cfg.height, rs.format.y8, cfg.fps)
             profile = pipe.start(rcfg)
             # A start can succeed and still deliver nothing. Prove the stream
-            # here, inside the retried unit, so a silent pipeline counts as a
-            # failed attempt rather than a capture full of empty frames.
+            # inside the retried unit, so a silent pipeline fails the attempt.
             try:
                 for _ in range(_WARMUP_FRAMES):
                     pipe.wait_for_frames(timeout_ms=_WARMUP_TIMEOUT_MS)
@@ -174,8 +173,8 @@ class RealsenseCamera:
 
     @property
     def pulse_emitter(self) -> bool:
-        """Both depth and dot-free IR wanted -> the projector must be toggled
-        per burst: on for depth, which needs the dots, off for the IR image."""
+        """Depth and IR together: the projector toggles per burst, on for depth,
+        off for the IR image."""
         return self.cfg.save_depth and (self.cfg.ir_left or self.cfg.ir_right)
 
     # -- internals ----------------------------------------------------------

@@ -1,8 +1,8 @@
 """Finding a board by USB vendor id, identically on every platform.
 
-Matching on the vendor id rather than on the first ``/dev/ttyACM*`` or
-``/dev/cu.usbmodem*`` is what makes this correct when several boards are
-attached at once: device paths carry no identity and their order is arbitrary.
+Device paths carry no identity and their order is arbitrary, so taking the first
+``/dev/ttyACM*`` or ``/dev/cu.usbmodem*`` picks the wrong board whenever several
+are attached. The vendor id identifies it.
 """
 
 from __future__ import annotations
