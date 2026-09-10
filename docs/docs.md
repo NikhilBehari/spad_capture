@@ -145,6 +145,12 @@ If no camera enumerates at all, it has dropped off the USB bus and no amount of
 retrying brings it back. The error says so, and the fix is to unplug the USB,
 wait about two seconds and plug it back in.
 
+One habit avoids most of those replugs: never `kill -9` a process that is
+holding the camera. Observed here, a `SIGKILL` mid-stream leaves the device in a
+power state the next open reports as `failed to set power state`, and shortly
+after it disappears from the bus. Ctrl-C and plain `kill` are handled: both
+backends catch `SIGINT` and `SIGTERM`, stop the pipeline and flush the run.
+
 Linux needs none of this: capture runs as an ordinary user.
 
 ## CLI
@@ -167,3 +173,4 @@ Flags shared by both backends. Per-backend flags are in
 | `rgb.save_depth` | `--save-depth` / `--no-save-depth` |
 | `rgb.ir_left` | `--ir-left` / `--no-ir-left` |
 | `rgb.ir_right` | `--ir-right` / `--no-ir-right` |
+| `rgb.ir_no_dots` | `--ir-no-dots` / `--ir-dots` |

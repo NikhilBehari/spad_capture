@@ -364,7 +364,9 @@ def _run_stream(cfg, transport, writer, cb, stop, rgb_cam=None, bg=None) -> int:
     fps = 0.0
     timed = cfg.capture.duration_s is not None
     expected = cfg.resolved()   # frame-shape contract; constant for the run
-    _console.print("[dim](streaming · Ctrl-C to stop)[/dim]")
+    bound = (f"for {cfg.capture.duration_s:g}s" if timed
+             else f"{cfg.capture.num_frames} frames")
+    _console.print(f"[dim](capturing {bound} · Ctrl-C to stop early)[/dim]")
     while not stop["stop"]:
         if timed:
             if (time.time() - t0) > cfg.capture.duration_s:
