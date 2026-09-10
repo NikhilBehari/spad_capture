@@ -40,7 +40,9 @@ def _require_device(rs, explicit):
     return serials[0] if serials else None
 
 
-_SETTLE_FRAMES = 8   # frames discarded after the projector is toggled
+_SETTLE_FRAMES = 8         # frames discarded after the projector is toggled
+_WARMUP_FRAMES = 5         # frames that must arrive before an open counts as good
+_WARMUP_TIMEOUT_MS = 2000  # per warmup frame
 
 
 @dataclass
@@ -63,7 +65,10 @@ class RealsenseCamera:
         def open_pipeline():
             """Build and start a fresh pipeline. Retried as a unit: a pipeline
             whose start failed cannot be reused."""
-            pipe = rs.pipeline()
+            # A fresh context per attempt: librealsense keeps device state on the
+            # context, and reusing one that just failed tends to fail again.
+            ctx = rs.context()
+            pipe = rs.pipeline(ctx)
             rcfg = rs.config()
             serial = _require_device(rs, cfg.serial_number)
             if serial:
@@ -76,9 +81,22 @@ class RealsenseCamera:
                 rcfg.enable_stream(rs.stream.infrared, 1, cfg.width, cfg.height, rs.format.y8, cfg.fps)
             if cfg.ir_right:
                 rcfg.enable_stream(rs.stream.infrared, 2, cfg.width, cfg.height, rs.format.y8, cfg.fps)
-            return pipe, pipe.start(rcfg)
+            profile = pipe.start(rcfg)
+            # A start can succeed and still deliver nothing. Prove the stream
+            # here, inside the retried unit, so a silent pipeline counts as a
+            # failed attempt rather than a capture full of empty frames.
+            try:
+                for _ in range(_WARMUP_FRAMES):
+                    pipe.wait_for_frames(timeout_ms=_WARMUP_TIMEOUT_MS)
+            except BaseException:
+                try:
+                    pipe.stop()      # release the device before the next attempt
+                except Exception:
+                    pass
+                raise
+            return pipe, profile, ctx
 
-        self._pipe, profile = open_with_retry(open_pipeline, log=_warn)
+        self._pipe, profile, self._ctx = open_with_retry(open_pipeline, log=_warn)
         self._align = rs.align(rs.stream.color) if (cfg.save_depth and cfg.enabled and cfg.align_depth) else None
 
         # Dot projector (on the stereo module). Toggled at most once per burst.
