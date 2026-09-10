@@ -22,22 +22,16 @@ frames stream after ``M``)::
 
 from __future__ import annotations
 
-import sys
 import time
-from typing import Iterator, Optional
+from typing import Optional
 
 import serial
-import serial.tools.list_ports as list_ports_mod
-from serial.tools.list_ports_common import ListPortInfo
 
+from spad_capture.ports import require_port as _require_port
 from spad_capture.sensors.st.config import END_BYTE, MAGIC, START_BYTE, ST_LINK_VID, Config
 
 # mode_code -> zone count, for rejecting false syncs before trusting a length.
 _MODE_ZONES = {1: 16, 2: 64}
-
-
-class PortNotFoundError(RuntimeError):
-    """No usable serial port could be resolved (detection gate failure)."""
 
 
 class HandshakeError(RuntimeError):
@@ -49,99 +43,9 @@ class HandshakeError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def list_ports() -> list[ListPortInfo]:
-    """All serial ports via ``serial.tools.list_ports.comports()``."""
-    return list(list_ports_mod.comports())
-
-
-def find_st_link_port() -> Optional[str]:
-    """Return the device path of the first ST-LINK VCP, else None.
-
-    Prefers VID 0x0483, falls back to platform-specific path/description patterns.
-    """
-    ports = list_ports()
-    for p in ports:
-        if p.vid == ST_LINK_VID:
-            return p.device
-
-    def _has_vid(p: ListPortInfo) -> bool:
-        return p.vid is not None
-
-    if any(_has_vid(p) for p in ports):
-        # Some port exposed a VID but none matched; don't fall back blindly.
-        return None
-
-    if sys.platform.startswith("linux"):
-        cands = sorted(p.device for p in ports if p.device.startswith("/dev/ttyACM"))
-    elif sys.platform == "darwin":
-        cands = sorted(p.device for p in ports if "usbmodem" in p.device)
-    elif sys.platform == "win32":
-        cands = [
-            p.device for p in ports
-            if any(d in (p.description or "") for d in ("STMicroelectronics", "STLink"))
-        ]
-    else:
-        cands = []
-    return cands[0] if cands else None
-
-
-def _ports_seen_block() -> str:
-    """Render the 'ports seen' section of the detection-gate abort message.
-
-    Lists USB ports (those exposing a VID/PID or a real description); the
-    legacy ``/dev/ttyS*`` placeholders are omitted to keep the message
-    actionable.
-    """
-    lines = []
-    for p in list_ports():
-        is_usb = p.vid is not None or (p.description and p.description != "n/a")
-        if not is_usb:
-            continue
-        vidpid = (
-            f"{p.vid:04x}:{p.pid:04x}" if (p.vid is not None and p.pid is not None) else "????:????"
-        )
-        desc = p.description or ""
-        mark = "   <-- matches ST-LINK VID" if p.vid == ST_LINK_VID else ""
-        lines.append(f"    {p.device:<14} {vidpid}  {desc}{mark}")
-    return "\n".join(lines) if lines else "    (none — no USB serial devices detected)"
-
-
 def require_port(explicit: Optional[str]) -> str:
-    """Resolve the port to use, or abort with one precise, actionable message.
-
-    - If ``explicit`` is given and the port exists, return it.
-    - Else auto-detect the ST-LINK VCP.
-    - On failure raise :class:`PortNotFoundError` listing the ports seen and
-      what was expected.
-    """
-    if explicit:
-        if any(p.device == explicit for p in list_ports()):
-            return explicit
-        raise PortNotFoundError(
-            f"Requested port {explicit} not found.\n"
-            f"  Ports seen:\n{_ports_seen_block()}\n"
-            f"  Fix: pass an existing --port, or plug in the NUCLEO board."
-        )
-
-    found = find_st_link_port()
-    if found:
-        return found
-
-    plat_hint = {
-        "linux": "/dev/ttyACM*",
-        "darwin": "/dev/cu.usbmodem*",
-        "win32": "an STMicroelectronics COM port",
-    }.get(
-        "linux" if sys.platform.startswith("linux") else sys.platform,
-        "/dev/ttyACM* on Linux",
-    )
-    raise PortNotFoundError(
-        "No ST-LINK VCP found.\n"
-        f"  Expected: a serial port with USB VID 0x{ST_LINK_VID:04x} (ST-LINK/V2.1),\n"
-        f"            typically {plat_hint}.\n"
-        f"  Ports seen:\n{_ports_seen_block()}\n"
-        "  Fix: plug in the NUCLEO board, or pass --port explicitly."
-    )
+    """The ST-LINK VCP port, matched by USB vendor id."""
+    return _require_port(explicit, vid=ST_LINK_VID, board="NUCLEO board (ST-LINK)")
 
 
 # ---------------------------------------------------------------------------

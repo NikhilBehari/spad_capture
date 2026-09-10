@@ -9,9 +9,7 @@ Serial protocol commands (per the bundled firmware sketch):
 
 from __future__ import annotations
 
-import glob
 import queue
-import sys
 import threading
 import time
 from typing import Optional
@@ -19,6 +17,7 @@ from typing import Optional
 import numpy as np
 import serial
 
+from spad_capture.ports import require_port
 from spad_capture.config import FirmwareConfig, RangeMode, SensorConfig, ZoneMode
 from spad_capture.frame import Frame
 
@@ -76,6 +75,8 @@ _TIMING = {
 # before the target and the usable span is NUM_BINS - ZERO_BIN.
 ZERO_BIN = 15.04
 
+ARDUINO_VID = 0x2341   # Arduino USB vendor id
+
 NUM_BINS = 128
 _SKIP_FIELDS = 3   # firmware row prefix: "#Raw,Count,Idx,..."
 
@@ -85,23 +86,9 @@ _SKIP_FIELDS = 3   # firmware row prefix: "#Raw,Count,Idx,..."
 # ---------------------------------------------------------------------------
 
 
-def find_arduino_port() -> str:
-    """Locate the Arduino serial port across platforms."""
-    if sys.platform.startswith("linux"):
-        ports = sorted(glob.glob("/dev/ttyACM*"))
-    elif sys.platform == "darwin":
-        ports = sorted(p for p in glob.glob("/dev/cu.*") if "usbmodem" in p)
-    elif sys.platform == "win32":
-        import serial.tools.list_ports as lp
-        ports = [
-            p.device for p in lp.comports()
-            if any(d in (p.description or "") for d in ("Arduino", "USB Serial Device"))
-        ]
-    else:
-        ports = []
-    if not ports:
-        raise RuntimeError("No Arduino serial port found. Pass --port or set sensor.port in config.")
-    return ports[0]
+def find_arduino_port(explicit: Optional[str] = None) -> str:
+    """The Arduino's serial port, matched by USB vendor id."""
+    return require_port(explicit, vid=ARDUINO_VID, board="Arduino (TMF8828)")
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +224,7 @@ class TMF8828Sensor:
                               else "single-shot (map_id=14)",
             }
 
-        port = config.port or find_arduino_port()
+        port = find_arduino_port(config.port)
         self._serial = serial.Serial(port, config.baudrate, timeout=config.timeout_s)
 
         # Wait for Arduino auto-reset after USB open.

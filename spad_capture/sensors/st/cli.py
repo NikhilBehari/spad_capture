@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Optional
 
 import click
-from pydantic import ValidationError
 
 from spad_capture.errors import clean as _clean
 from spad_capture.sensors.st.config import Config, Mode, load_config
@@ -131,8 +130,8 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
 def detect_cmd(port: Optional[str]) -> None:
     """Run the detection gate + handshake; print the device id or a precise abort."""
     from spad_capture.sensors.st.config import SensorConfig
-    from spad_capture.sensors.st.transport import (HandshakeError, PortNotFoundError,
-                                          VL53L8CHTransport)
+    from spad_capture.ports import PortNotFoundError
+    from spad_capture.sensors.st.transport import HandshakeError, VL53L8CHTransport
 
     cfg = Config(sensor=SensorConfig(port=port))
     try:
@@ -291,7 +290,8 @@ def capture_cmd(config_path, port, mode, start_mm, end_mm, bin_mm, zone, roi,
     """Capture frames. Gates on ST-LINK detection + handshake first."""
     from spad_capture.sensors.st.controller import run_capture, run_with_viz
     from spad_capture.sensors.st.parser import FrameError
-    from spad_capture.sensors.st.transport import HandshakeError, PortNotFoundError
+    from spad_capture.ports import PortNotFoundError
+    from spad_capture.sensors.st.transport import HandshakeError
 
     try:
         cfg = load_config(config_path)
@@ -331,7 +331,8 @@ def viz_cmd(config_path, host, viz_port, bind_all, source, rate_hz) -> None:
     """Serve the live dashboard, or replay a saved capture with --source."""
     from spad_capture.sensors.st.controller import run_capture, run_with_viz
     from spad_capture.sensors.st.parser import FrameError
-    from spad_capture.sensors.st.transport import HandshakeError, PortNotFoundError
+    from spad_capture.ports import PortNotFoundError
+    from spad_capture.sensors.st.transport import HandshakeError
 
     try:
         cfg = load_config(config_path)
