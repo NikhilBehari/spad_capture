@@ -265,10 +265,12 @@ def _print_banner(cfg: Config, device: dict, rgb_cam, writer: Writer,
             streams.append("rgb")
         if cfg.rgb.save_depth:
             streams.append("depth")
+        # Mirrors the emitter policy set at the top of this module: dots unless
+        # they were turned off, and manual mode drops them between bursts.
+        dots = not cfg.rgb.ir_no_dots and cfg.capture.mode != CaptureMode.MANUAL
         for on, nm in ((cfg.rgb.ir_left, "ir-left"), (cfg.rgb.ir_right, "ir-right")):
             if on:
-                streams.append(f"{nm} (plain, SPAD-lit)" if not cfg.rgb.save_depth
-                               else f"{nm} (dots if streaming)")
+                streams.append(f"{nm} ({'dots' if dots else 'no dots'})")
         tbl.add_row("camera",
                     f"{cfg.rgb.width}x{cfg.rgb.height} @ {cfg.rgb.fps}fps  ·  "
                     + "  ·  ".join(streams) + "  [dim](background thread)[/dim]")

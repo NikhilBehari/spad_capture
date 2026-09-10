@@ -149,8 +149,13 @@ def _print_banner(cfg: Config, sensor: TMF8828Sensor, rgb_cam, writer: Writer) -
                 + (f"  ·  n={cfg.capture.num_frames}" if cfg.capture.mode == CaptureMode.SEQUENTIAL else "")
                 + (f"  ·  duration={cfg.capture.duration_s}s" if cfg.capture.duration_s else ""))
     if rgb_cam is not None:
-        d_bit = "  ·  depth" if cfg.rgb.save_depth else ""
-        tbl.add_row("rgb", f"{cfg.rgb.width}x{cfg.rgb.height} @ {cfg.rgb.fps}fps{d_bit}")
+        bits = [f"{cfg.rgb.width}x{cfg.rgb.height} @ {cfg.rgb.fps}fps"]
+        if cfg.rgb.save_depth:
+            bits.append("depth")
+        for on, nm in ((cfg.rgb.ir_left, "ir-left"), (cfg.rgb.ir_right, "ir-right")):
+            if on:
+                bits.append(f"{nm} ({'no dots' if cfg.rgb.ir_no_dots else 'dots'})")
+        tbl.add_row("rgb", "  ·  ".join(bits))
     tbl.add_row("output", f"{cfg.storage.format.value}  →  [cyan]{writer.run_dir}[/cyan]")
     # The viz URL is printed up front by run_with_viz, before sensor init.
     _console.print(Panel(tbl, title="[bold]spad capture[/bold]", title_align="left",
