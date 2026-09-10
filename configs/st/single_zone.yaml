@@ -4,6 +4,8 @@
 # zone is [row, col], 0-indexed in the sensor grid (8x8 -> 0..7); here [3, 4].
 # Budget: 1 zone * 255 bins -> ~1.3 KB, far inside the 6160-byte cap.
 
+backend: st
+
 name: "single_zone"
 
 sensor:

@@ -8,8 +8,14 @@ Sensor-specific configuration, zone selection and firmware:
 - [st.md](st.md) — VL53L8CH: histogram window, ROI, firmware.
 
 A single YAML config drives every run. All fields are optional; CLI flags
-override the file. Each config declares `sensor: tmf | st`, checked against the
+override the file. Each config declares `backend: tmf | st`, checked against the
 command it is run with.
+
+## `backend`
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `backend` | none | `tmf` or `st`. Optional, but every shipped config sets it: running a config under the other backend then fails by name instead of as a field-type error. |
 
 ## `capture`
 

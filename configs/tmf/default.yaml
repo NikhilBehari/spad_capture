@@ -1,6 +1,8 @@
 # spad_capture default config. Every field shown is its default.
 # Full reference: docs/options.md.
 
+backend: tmf
+
 name: null
 
 sensor:

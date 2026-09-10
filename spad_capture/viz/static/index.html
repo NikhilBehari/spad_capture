@@ -239,6 +239,8 @@
 
   // Wire-format constants (must match server.py _HEADER "<IIIIdII").
   const HEADER_BYTES = 48;
+  const WIRE_VERSION = 1;   // must match _WIRE_VERSION in viz/server.py
+  let warnedVersion = false;
 
   // Until the first real frame arrives, show a clean placeholder so users who
   // open the page during sensor init don't see an empty void.
@@ -484,6 +486,11 @@
   // then H*W*B histogram, optional H*W f32 ambient, then the JPEGs in order.
   function parseFrame(buf) {
     const dv = new DataView(buf);
+    const version = dv.getUint16(0, true);
+    if (version !== WIRE_VERSION && !warnedVersion) {
+      warnedVersion = true;
+      console.warn(`viz: frame wire version ${version}, page expects ${WIRE_VERSION}`);
+    }
     const dtype = dv.getUint8(2), flags = dv.getUint8(3);
     const index = dv.getUint32(4, true);
     const h = dv.getUint32(8, true);

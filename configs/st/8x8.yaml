@@ -3,6 +3,8 @@
 # gives 18 bins: 64*18*5 + 64*5 + 28 = 6108 bytes, just inside 6160.
 # Coarser bins are the cost of the larger zone grid.
 
+backend: st
+
 name: "8x8"
 
 sensor:

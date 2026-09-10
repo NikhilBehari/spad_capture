@@ -9,7 +9,7 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
-from spad_capture.config import RgbConfig, VizConfig
+from spad_capture.config import RgbConfig, VizConfig, check_backend
 
 # ---------------------------------------------------------------------------
 # Constants — the cross-file ABI. Never re-literal these elsewhere.
@@ -459,4 +459,5 @@ def load_config(path: Path | str | None) -> Config:
     if not p.exists():
         raise FileNotFoundError(f"Config file not found: {p}")
     raw = yaml.safe_load(p.read_text()) or {}
+    check_backend(raw, "st", p)
     return Config(**raw)

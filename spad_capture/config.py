@@ -294,6 +294,21 @@ class Config(BaseModel):
         return CustomMask(**self.mask)
 
 
+def check_backend(raw: dict, expected: str, path: Path) -> None:
+    """Reject a config written for a different backend.
+
+    A config may name its backend with a top-level ``backend:`` key. Without
+    it the fields themselves still fail validation, but with a pydantic enum
+    error rather than a sentence naming the mistake.
+    """
+    got = raw.get("backend") if isinstance(raw, dict) else None
+    if got is not None and got != expected:
+        raise ValueError(
+            f"{path.name} is a {got} config, but you ran `spad {expected}`. "
+            f"Use `spad {got}` instead."
+        )
+
+
 def load_config(path: Path | str | None) -> Config:
     """Load a YAML config file, or return defaults if path is None."""
     if path is None:
@@ -302,4 +317,5 @@ def load_config(path: Path | str | None) -> Config:
     if not p.exists():
         raise FileNotFoundError(f"Config file not found: {p}")
     raw = yaml.safe_load(p.read_text()) or {}
+    check_backend(raw, "tmf", p)
     return Config(**raw)

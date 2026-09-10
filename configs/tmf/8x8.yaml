@@ -1,6 +1,8 @@
 # 8x8 mode with an explicit kIter (the firmware default of 10 is
 # too low for 8x8 to produce usable counts).
 
+backend: tmf
+
 name: "8x8"
 
 sensor:

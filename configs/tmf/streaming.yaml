@@ -1,6 +1,8 @@
 # Continuous 3x3_wide streaming with the live dashboard. Runs until
 # Ctrl-C. Frames are saved to a single growing HDF5.
 
+backend: tmf
+
 name: "streaming"
 
 sensor:

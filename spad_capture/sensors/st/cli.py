@@ -9,20 +9,10 @@ from typing import Optional
 import click
 from pydantic import ValidationError
 
+from spad_capture.errors import clean as _clean
 from spad_capture.sensors.st.config import Config, Mode, load_config
 
 _MODE_CHOICES = [m.value for m in Mode]
-
-
-def _clean(err: Exception) -> click.ClickException:
-    """Turn an exception into a clean ClickException, unwrapping pydantic's verbose envelope."""
-    if isinstance(err, ValidationError):
-        msgs = [
-            e["msg"].removeprefix("Value error, ")
-            for e in err.errors()
-        ]
-        return click.ClickException("\n".join(msgs) if msgs else str(err))
-    return click.ClickException(str(err))
 
 
 def _override(cfg: Config, **kw) -> Config:

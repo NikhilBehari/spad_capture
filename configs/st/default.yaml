@@ -2,6 +2,8 @@
 # All capture-window fields are in physical units (one-way mm / Hz / ms);
 # native CNH bin width is 37.53 mm and bin_mm is rounded to a multiple of it.
 
+backend: st
+
 name: null
 
 sensor:

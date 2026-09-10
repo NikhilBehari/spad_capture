@@ -3,6 +3,8 @@
 # trigger (Enter on stdin, or the dashboard Capture button) restarts ranging,
 # captures another burst of num_frames, and stops again, until Ctrl-C.
 
+backend: st
+
 name: "manual"
 
 sensor:

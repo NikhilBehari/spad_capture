@@ -1,6 +1,8 @@
 # 8x8 mode with colocated Realsense RGB and aligned depth, plus the live
 # dashboard.
 
+backend: tmf
+
 name: "8x8_rgb"
 
 sensor:

@@ -9,6 +9,8 @@
 # (3,4) selects the two vertically-adjacent zones (3,4) and (4,4). Retune start_row/
 # start_col if the beam lands elsewhere (a middle-pixel scan finds the hot zones).
 
+backend: st
+
 name: "double_middle"
 
 sensor:

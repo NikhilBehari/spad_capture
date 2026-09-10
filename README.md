@@ -53,7 +53,7 @@ Each backend has a few more commands of its own (`flash`, `viz`, and the ST's
 Add `--viz` for the live dashboard at `http://127.0.0.1:8888`, and
 `--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture.
 
-Each YAML declares its `sensor:`, checked against the command it is run with,
+Each YAML declares its `backend:`, checked against the command it is run with,
 so a config used with the wrong backend is an error.
 
 ## Key parameters

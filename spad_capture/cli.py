@@ -9,6 +9,7 @@ import click
 
 from spad_capture.capture import run_capture
 from spad_capture.config import Config, ZoneMode, load_config
+from spad_capture.errors import clean as _clean
 from spad_capture.sensors.tmf.flash import flash as do_flash
 from spad_capture.sensors.st.cli import st as _st_group
 from spad_capture.viz.server import run_with_viz  # noqa: F401  (re-exported for downstream)
@@ -178,38 +179,37 @@ def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, du
                  samples_per_frame, output_dir, fmt, name, viz, viz_port, bind_all, rgb,
                  save_depth, ir_left, ir_right, calibrate, kilo_iter, period_ms) -> None:
     """Capture frames according to the config (+ optional overrides)."""
-    cfg = load_config(config_path)
-    cfg = _override(
-        cfg, port=port, zone=zone, range_=range_, mode=mode,
-        num_frames=num_frames, duration=duration, interval=interval,
-        samples_per_frame=samples_per_frame,
-        output_dir=output_dir, fmt=fmt, name=name,
-        viz=viz, viz_port=viz_port,
-        kilo_iter=kilo_iter, period_ms=period_ms,
-        rgb=rgb, save_depth=save_depth, ir_left=ir_left, ir_right=ir_right,
-        calibrate=calibrate,
-    )
-    if mask_path is not None:
-        import yaml as _yaml
-        raw = _yaml.safe_load(mask_path.read_text()) or {}
-        section = raw.get("mask", raw) if isinstance(raw, dict) else None
-        if not isinstance(section, dict):
-            raise click.ClickException(f"No `mask:` section found in {mask_path}.")
-        data = cfg.model_dump()
-        data["mask"] = section
-        data["sensor"]["zone_mode"] = "custom"
-        cfg = Config(**data)
-    if bind_all:
-        cfg.viz.host = "0.0.0.0"
-
     try:
+        cfg = load_config(config_path)
+        cfg = _override(
+            cfg, port=port, zone=zone, range_=range_, mode=mode,
+            num_frames=num_frames, duration=duration, interval=interval,
+            samples_per_frame=samples_per_frame,
+            output_dir=output_dir, fmt=fmt, name=name,
+            viz=viz, viz_port=viz_port,
+            kilo_iter=kilo_iter, period_ms=period_ms,
+            rgb=rgb, save_depth=save_depth, ir_left=ir_left, ir_right=ir_right,
+            calibrate=calibrate,
+        )
+        if mask_path is not None:
+            import yaml as _yaml
+            raw = _yaml.safe_load(mask_path.read_text()) or {}
+            section = raw.get("mask", raw) if isinstance(raw, dict) else None
+            if not isinstance(section, dict):
+                raise click.ClickException(f"No `mask:` section found in {mask_path}.")
+            data = cfg.model_dump()
+            data["mask"] = section
+            data["sensor"]["zone_mode"] = "custom"
+            cfg = Config(**data)
+        if bind_all:
+            cfg.viz.host = "0.0.0.0"
+
         if cfg.viz.enabled:
             run_with_viz(cfg, run_capture)
         else:
             run_capture(cfg)
-    except ValueError as e:
-        # Pretty-print mask / config-validation failures.
-        raise click.ClickException(str(e)) from None
+    except (ValueError, FileNotFoundError) as e:
+        raise _clean(e) from None
 
 
 @tmf.command("viz")

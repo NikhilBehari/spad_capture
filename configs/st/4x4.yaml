@@ -2,6 +2,8 @@
 # At 4x4 the CNH budget caps num_bins at 75; this 0..1295 mm window is
 # 35 bins: 16*35*5 + 16*5 + 28 = 2908 bytes, inside the 6160-byte limit.
 
+backend: st
+
 name: "4x4"
 
 sensor:
