@@ -97,6 +97,8 @@ def _override(cfg: Config, **kw) -> Config:
         data["rgb"]["ir_left"] = kw["ir_left"]
     if kw.get("ir_right") is not None:
         data["rgb"]["ir_right"] = kw["ir_right"]
+    if kw.get("ir_no_dots") is not None:
+        data["rgb"]["ir_no_dots"] = kw["ir_no_dots"]
     if kw.get("rs_width") is not None:
         data["rgb"]["width"] = kw["rs_width"]
     if kw.get("rs_height") is not None:
@@ -269,6 +271,8 @@ def _with_common_overrides(fn):
                    "(only matters when --rgb is also set; depth-only capture stays native).")
 @click.option("--ir-left/--no-ir-left", "ir_left", default=None,
               help="Capture the left Realsense IR image (infrared 1).")
+@click.option("--ir-no-dots/--ir-dots", "ir_no_dots", default=None,
+              help="Keep the dot projector off so IR shows no projected pattern.")
 @click.option("--ir-right/--no-ir-right", "ir_right", default=None,
               help="Capture the right Realsense IR image (infrared 2).")
 @click.option("--rs-width", "rs_width", type=int, default=None,
@@ -286,6 +290,7 @@ def capture_cmd(config_path, port, mode, start_mm, end_mm, bin_mm, zone, roi,
                 freq, integ_ms, ranging_mode,
                 cap_mode, num_frames, duration, interval, output_dir, fmt, name,
                 viz, viz_port, bind_all, rgb, save_depth, depth_native, ir_left, ir_right,
+                ir_no_dots,
                 rs_width, rs_height, rs_fps, sum_frames, bg_subtract) -> None:
     """Capture frames. Gates on ST-LINK detection + handshake first."""
     from spad_capture.sensors.st.controller import run_capture, run_with_viz
@@ -302,7 +307,7 @@ def capture_cmd(config_path, port, mode, start_mm, end_mm, bin_mm, zone, roi,
             num_frames=num_frames, duration=duration, interval=interval,
             output_dir=output_dir, fmt=fmt, name=name, viz=viz, viz_port=viz_port,
             rgb=rgb, save_depth=save_depth, depth_native=depth_native,
-            ir_left=ir_left, ir_right=ir_right,
+            ir_left=ir_left, ir_right=ir_right, ir_no_dots=ir_no_dots,
             rs_width=rs_width, rs_height=rs_height, rs_fps=rs_fps, sum_frames=sum_frames,
             bg_subtract=bg_subtract,
         )

@@ -145,7 +145,7 @@ def _apply_steady_emitter(cfg: Config, rgb_cam) -> None:
         return
     if rgb_cam.pulse_emitter:
         # both depth+ir: manual pulses (off during burst), stream stays on (depth).
-        rgb_cam.set_emitter(cfg.capture.mode != CaptureMode.MANUAL)
+        rgb_cam.set_emitter(not cfg.rgb.ir_no_dots and cfg.capture.mode != CaptureMode.MANUAL)
     else:
         # off only for the IR-without-depth case; on otherwise.
         ir_only = (cfg.rgb.ir_left or cfg.rgb.ir_right) and not cfg.rgb.save_depth

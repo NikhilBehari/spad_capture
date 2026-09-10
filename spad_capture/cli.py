@@ -43,6 +43,7 @@ _OVERRIDES: dict[str, tuple[str, ...]] = {
     "save_depth":        ("rgb", "save_depth"),
     "ir_left":           ("rgb", "ir_left"),
     "ir_right":          ("rgb", "ir_right"),
+    "ir_no_dots":        ("rgb", "ir_no_dots"),
 }
 
 
@@ -172,12 +173,15 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
               help="Capture the left IR image (infrared 1).")
 @click.option("--ir-right/--no-ir-right", "ir_right", default=None,
               help="Capture the right IR image (infrared 2).")
+@click.option("--ir-no-dots/--ir-dots", "ir_no_dots", default=None,
+              help="Keep the dot projector off so IR shows no projected pattern.")
 @click.option("--calibrate/--no-calibrate", "calibrate", default=None,
               help="Run factory crosstalk calibration on the active mask "
                    "before capture starts. Needs a dark housing.")
 def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, duration, interval,
                  samples_per_frame, output_dir, fmt, name, viz, viz_port, bind_all, rgb,
-                 save_depth, ir_left, ir_right, calibrate, kilo_iter, period_ms) -> None:
+                 save_depth, ir_left, ir_right, ir_no_dots, calibrate, kilo_iter,
+                 period_ms) -> None:
     """Capture frames according to the config (+ optional overrides)."""
     try:
         cfg = load_config(config_path)
@@ -189,6 +193,7 @@ def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, du
             viz=viz, viz_port=viz_port,
             kilo_iter=kilo_iter, period_ms=period_ms,
             rgb=rgb, save_depth=save_depth, ir_left=ir_left, ir_right=ir_right,
+            ir_no_dots=ir_no_dots,
             calibrate=calibrate,
         )
         if mask_path is not None:

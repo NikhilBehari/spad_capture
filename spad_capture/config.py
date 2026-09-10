@@ -229,12 +229,24 @@ class RgbConfig(BaseModel):
     )
     ir_left: bool = Field(default=False, description="Capture the left IR image (infrared 1).")
     ir_right: bool = Field(default=False, description="Capture the right IR image (infrared 2).")
+    ir_no_dots: bool = Field(
+        default=False,
+        description="Hold the dot projector off so the IR images show no projected "
+                    "pattern. With save_depth the projector is still pulsed on for "
+                    "depth, which needs the dots to be dense.",
+    )
     jpeg_quality: int = Field(default=80, description="JPEG quality (1-100) for viz encoding.")
 
     @property
     def active(self) -> bool:
         """Any Realsense stream wanted."""
         return self.enabled or self.save_depth or self.ir_left or self.ir_right
+
+    @model_validator(mode="after")
+    def _validate(self) -> "RgbConfig":
+        if self.ir_no_dots and not (self.ir_left or self.ir_right):
+            raise ValueError("rgb.ir_no_dots has no effect without ir_left or ir_right")
+        return self
 
 
 # ---------------------------------------------------------------------------

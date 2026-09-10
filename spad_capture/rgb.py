@@ -14,6 +14,31 @@ from typing import Optional
 
 import numpy as np
 
+from spad_capture.macos import open_with_retry
+
+
+def _warn(msg: str) -> None:
+    print(f"  {msg}", flush=True)
+
+
+def _require_device(rs, explicit):
+    """The camera serial to open, refusing to guess when several are attached.
+
+    Called after the platform shim has released the device, so the enumeration
+    it does is the real one.
+    """
+    serials = [d.get_info(rs.camera_info.serial_number) for d in rs.context().query_devices()]
+    if explicit:
+        if explicit not in serials:
+            raise RuntimeError(f"Realsense {explicit} not attached. Seen: {serials or 'none'}")
+        return explicit
+    if len(serials) > 1:
+        raise RuntimeError(
+            f"{len(serials)} Realsense cameras attached: {', '.join(serials)}.\n"
+            "  Fix: set rgb.serial_number in the config to choose one."
+        )
+    return serials[0] if serials else None
+
 
 _SETTLE_FRAMES = 8   # frames discarded after the projector is toggled
 
@@ -35,19 +60,25 @@ class RealsenseCamera:
         self._rs = rs
         self.cfg = cfg
 
-        self._pipe = rs.pipeline()
-        rcfg = rs.config()
-        if cfg.serial_number:
-            rcfg.enable_device(cfg.serial_number)
-        if cfg.enabled:
-            rcfg.enable_stream(rs.stream.color, cfg.width, cfg.height, rs.format.bgr8, cfg.fps)
-        if cfg.save_depth:
-            rcfg.enable_stream(rs.stream.depth, cfg.width, cfg.height, rs.format.z16, cfg.fps)
-        if cfg.ir_left:
-            rcfg.enable_stream(rs.stream.infrared, 1, cfg.width, cfg.height, rs.format.y8, cfg.fps)
-        if cfg.ir_right:
-            rcfg.enable_stream(rs.stream.infrared, 2, cfg.width, cfg.height, rs.format.y8, cfg.fps)
-        profile = self._pipe.start(rcfg)
+        def open_pipeline():
+            """Build and start a fresh pipeline. Retried as a unit: a pipeline
+            whose start failed cannot be reused."""
+            pipe = rs.pipeline()
+            rcfg = rs.config()
+            serial = _require_device(rs, cfg.serial_number)
+            if serial:
+                rcfg.enable_device(serial)
+            if cfg.enabled:
+                rcfg.enable_stream(rs.stream.color, cfg.width, cfg.height, rs.format.bgr8, cfg.fps)
+            if cfg.save_depth:
+                rcfg.enable_stream(rs.stream.depth, cfg.width, cfg.height, rs.format.z16, cfg.fps)
+            if cfg.ir_left:
+                rcfg.enable_stream(rs.stream.infrared, 1, cfg.width, cfg.height, rs.format.y8, cfg.fps)
+            if cfg.ir_right:
+                rcfg.enable_stream(rs.stream.infrared, 2, cfg.width, cfg.height, rs.format.y8, cfg.fps)
+            return pipe, pipe.start(rcfg)
+
+        self._pipe, profile = open_with_retry(open_pipeline, log=_warn)
         self._align = rs.align(rs.stream.color) if (cfg.save_depth and cfg.enabled and cfg.align_depth) else None
 
         # Dot projector (on the stereo module). Toggled at most once per burst.
@@ -68,7 +99,8 @@ class RealsenseCamera:
         self._stop = threading.Event()
         self._reader = threading.Thread(target=self._loop, name="realsense", daemon=True)
         self._reader.start()
-        self.set_emitter(True)        # force a known state; the controller sets per-burst policy
+        # Force a known state; the controller sets per-burst policy from here.
+        self.set_emitter(not cfg.ir_no_dots)
 
     # -- reader thread ------------------------------------------------------
 
@@ -107,6 +139,11 @@ class RealsenseCamera:
         if ds is None or not ds.supports(self._rs.option.emitter_enabled) or on == self._emitter_on:
             return
         ds.set_option(self._rs.option.emitter_enabled, 1 if on else 0)
+        # Drive laser power too: emitter_enabled alone can read back a value the
+        # hardware did not take, which leaves faint dots in a supposedly clean IR.
+        if ds.supports(self._rs.option.laser_power):
+            rng = ds.get_option_range(self._rs.option.laser_power)
+            ds.set_option(self._rs.option.laser_power, rng.max if on else 0.0)
         self._emitter_on = on
         self._wait_fresh(_SETTLE_FRAMES, timeout_ms=200)
 
@@ -119,7 +156,8 @@ class RealsenseCamera:
 
     @property
     def pulse_emitter(self) -> bool:
-        """Both depth and IR wanted -> projector off for plain IR, on for depth."""
+        """Both depth and dot-free IR wanted -> the projector must be toggled
+        per burst: on for depth, which needs the dots, off for the IR image."""
         return self.cfg.save_depth and (self.cfg.ir_left or self.cfg.ir_right)
 
     # -- internals ----------------------------------------------------------
