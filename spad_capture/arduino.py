@@ -19,6 +19,7 @@ _console = Console()
 # Fallback search paths for arduino-cli when not on PATH.
 _CLI_CANDIDATES = [
     Path("/usr/local/bin/arduino-cli"),
+    Path("/opt/homebrew/bin/arduino-cli"),   # Homebrew on Apple silicon
     Path("~/.local/bin/arduino-cli").expanduser(),
 ]
 _BOOTSTRAP_URL = "https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh"
