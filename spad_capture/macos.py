@@ -1,11 +1,14 @@
 """Opening the Realsense on macOS. Every entry point no-ops off macOS.
 
 macOS routes UVC devices through camera assistant daemons that claim the
-Realsense the moment anything enumerates it. They run as a system user, respawn
-on demand, and cannot be stopped for good, so the only sequence that works is:
-release them and open the device from the same root process, right away. That
-is why Realsense capture on macOS needs root, and why the open is retried -- the
-first attempt after a release can still lose the race to a respawning daemon.
+Realsense the moment anything enumerates it. They run as a system user and
+respawn on demand, so they cannot be stopped for good: the device has to be
+released and opened from the same root process, right away. Measured here, an
+ordinary user cannot open the camera even with nothing else using it, so on
+macOS this is a hard requirement rather than a fallback.
+
+The open is retried because releasing the daemons does not settle the race --
+a respawning daemon can still win the next attempt.
 """
 
 from __future__ import annotations

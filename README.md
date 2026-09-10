@@ -22,8 +22,8 @@ firmware in [docs/tmf.md](docs/tmf.md) and [docs/st.md](docs/st.md).
 ## Install
 
 ```bash
-# one environment serves both sensors
-conda create -n spad_capture python=3.11 -y
+# one environment serves both sensors, on macOS and Linux alike
+conda env create -f environment.yml
 conda activate spad_capture
 pip install -e .
 
@@ -52,6 +52,9 @@ Each backend has a few more commands of its own (`flash`, `viz`, and the ST's
 
 Add `--viz` for the live dashboard at `http://127.0.0.1:8888`, and
 `--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture.
+`--ir-no-dots` holds the dot projector off, so the IR images carry no projected
+pattern. On macOS Realsense capture needs `sudo`; the run says so and prints the
+command. See [docs/docs.md](docs/docs.md#realsense-on-macos).
 
 Each YAML declares its `backend:`, checked against the command it is run with,
 so a config used with the wrong backend is an error.

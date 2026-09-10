@@ -98,6 +98,10 @@ provide a different dashboard.
 | `fps` | `30` | Color frame rate. |
 | `serial_number` | `null` | Specific Realsense serial; `null` selects the first device. |
 | `save_depth` | `false` | Save depth frames aligned to color. |
+| `align_depth` | `true` | Align depth to color; needs the color stream. |
+| `ir_left` | `false` | Save the left IR image (infrared 1). |
+| `ir_right` | `false` | Save the right IR image (infrared 2). |
+| `ir_no_dots` | `false` | Hold the dot projector off so IR carries no projected pattern. |
 | `jpeg_quality` | `80` | JPEG quality (1 to 100) for the live preview. |
 
 If `rgb.enabled = true` and the camera fails to open, the run aborts
@@ -105,6 +109,43 @@ before any output file is created. With `save_depth = true`, depth
 frames are captured and aligned to color through the Realsense alignment
 API. Aligned depth is stored alongside each SPAD frame in the chosen
 storage format (`pkl` or `h5`).
+
+### Dot projector
+
+The Realsense projects an IR dot pattern. Stereo depth needs it -- the dots are
+what make depth dense -- but it also stamps that pattern across the IR images.
+`ir_no_dots` holds the projector off, giving IR lit only by the scene. With
+`save_depth` set as well the projector is pulsed: on for depth, off for IR.
+
+Measured on a D435i, projector on against off: IR Laplacian variance 932 against
+37, and depth 98% valid against 41%. Dot-free IR therefore costs depth density,
+which is why the two are separate switches.
+
+### Realsense on macOS
+
+macOS routes cameras through system daemons that claim the device as soon as
+anything enumerates it. They respawn on demand, so the camera can only be opened
+by a process that can release them: **Realsense capture on macOS needs root**.
+
+Nothing prompts for a password. A run that needs root stops immediately and
+prints the exact command to repeat under `sudo`:
+
+```
+Could not open the Realsense as this user (last error: No device connected).
+  Something else holds the camera. On macOS that is usually the system
+  camera daemons, and only root can release them.
+  Run: sudo /path/to/spad tmf capture --rgb
+```
+
+The open is retried, and each attempt must deliver frames before it counts:
+a Realsense can start a pipeline and then send nothing, and treating that as
+success would write a run full of empty frames.
+
+If no camera enumerates at all, it has dropped off the USB bus and no amount of
+retrying brings it back. The error says so, and the fix is to unplug the USB,
+wait about two seconds and plug it back in.
+
+Linux needs none of this: capture runs as an ordinary user.
 
 ## CLI
 
