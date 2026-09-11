@@ -57,7 +57,8 @@ Each backend has a few more commands of its own (`flash`, `viz`, and the ST's
 Add `--viz` for the live dashboard at `http://127.0.0.1:8888`, and
 `--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture.
 `--ir-no-dots` holds the dot projector off, leaving IR free of the projected
-pattern. Realsense capture on macOS needs `sudo`, and the run prints the command
+pattern. `spad camera check` reports whether the camera is usable and what to do
+if not. Realsense capture on macOS needs `sudo`, and the run prints the command
 to repeat. See [docs/docs.md](docs/docs.md#realsense-on-macos).
 
 Each YAML declares its `backend:`, checked against the command it is run with,

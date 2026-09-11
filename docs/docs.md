@@ -146,15 +146,28 @@ released needs seconds before it delivers frames, and each attempt disturbs it.
 Expect the first capture after a long-running process releases the camera to need
 a second run.
 
-When no camera enumerates, it has dropped off the USB bus. Unplug it, wait two
-seconds, plug it back in.
+### When the camera will not open
 
-Never `kill -9` a process holding the camera. SIGKILL mid-stream leaves it in a
-power state the next open reports as `failed to set power state`, after which it
-disappears from the bus. Both backends catch `SIGINT` and `SIGTERM`, stop the
-pipeline and flush the run.
+`spad camera check` reports the state and the one action that clears it. The
+same classification drives capture failures, so a failed run names the fix.
 
-Linux needs none of this.
+| State | Meaning | Fix |
+|-------|---------|-----|
+| `ok` | Usable; prints model and serial | — |
+| `absent` | Not on the USB bus | Plug or replug it |
+| `stuck` | Enumerates, but every access raises `failed to set power state` | Reset its USB: replug, or on Linux `sudo usbreset <id from lsusb>` |
+| `hidden` | macOS only: an unprivileged process sees no camera | Re-run under `sudo` |
+| `missing` | `pyrealsense2` is not installed | `pip install -e '.[rgb]'` |
+
+`stuck` happens on Linux as well as macOS, and retrying never clears it -- the
+USB device has to be reset. On Linux that needs no physical access.
+
+Never `kill -9` a process holding the camera. SIGKILL mid-stream leaves it
+`stuck`, and it can then disappear from the bus entirely. Both backends catch
+`SIGINT` and `SIGTERM`, stop the pipeline and flush the run.
+
+Only the root requirement is macOS-specific. Linux captures run as an ordinary
+user.
 
 ## CLI
 
