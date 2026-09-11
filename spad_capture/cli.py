@@ -333,4 +333,25 @@ def viz_cmd(config_path, host, port, bind_all, source, rate_hz) -> None:
         server.stop()
 
 
+@main.group("camera")
+def camera_group() -> None:
+    """Colocated Realsense."""
+
+
+@camera_group.command("check")
+def camera_check_cmd() -> None:
+    """Report whether the Realsense is usable, and what to do if not."""
+    from rich.console import Console
+
+    from spad_capture.macos import camera_state, fix_for
+    c = Console()
+    state, detail = camera_state()
+    if state == "ok":
+        c.print(f"[bold green]ok[/bold green]  {detail}")
+        return
+    c.print(f"[bold red]{state}[/bold red]  {detail}\n"
+            f"[yellow]fix[/yellow]  {fix_for(state)}")
+    raise SystemExit(1)
+
+
 main.add_command(_st_group)

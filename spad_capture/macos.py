@@ -1,4 +1,7 @@
-"""Opening the Realsense on macOS. Every entry point no-ops off macOS.
+"""Opening the Realsense, and reporting why it will not open.
+
+The retry and the diagnosis run on every platform. Only the daemon handling
+below is macOS-specific, and it no-ops elsewhere.
 
 macOS routes UVC devices through camera assistant daemons that claim the
 Realsense the moment anything enumerates it. They run as a system user and
@@ -99,19 +102,54 @@ def open_with_retry(open_fn: Callable[[], T], log: Optional[Callable[[str], None
     raise RealsenseOpenError(_failure_text(last))
 
 
-def _failure_text(last: str) -> str:
-    """Explain the failure, and say whether a USB replug is the remaining step."""
+_STUCK = "failed to set power state"
+
+
+def camera_state() -> tuple[str, str]:
+    """Classify the camera as ``ok``, ``absent``, ``stuck``, ``hidden`` or ``error``.
+
+    ``stuck`` is a camera that enumerates but refuses every access. No amount of
+    retrying clears it; the USB device has to be reset.
+    """
     try:
         import pyrealsense2 as rs
-        seen = len(rs.context().query_devices())
-    except Exception:
-        seen = 0
-    if seen == 0:
-        return (f"No Realsense enumerated (last error: {last}).\n"
-                "  The camera can drop off the USB bus outright, and nothing in software\n"
-                "  brings it back.\n"
-                "  Fix: unplug the Realsense USB, wait ~2s, plug it back in, and re-run.")
-    return (f"A Realsense is attached but would not open (last error: {last}).\n"
-            "  Fix: re-run -- a camera another process has just released needs a few\n"
-            "  seconds. Failing that, close whatever else is using it, or unplug and\n"
-            "  replug its USB.")
+    except Exception as e:
+        return "error", f"pyrealsense2 is not importable ({e})"
+    try:
+        devices = list(rs.context().query_devices())
+    except Exception as e:
+        return ("stuck" if _STUCK in str(e) else "error"), str(e).strip()
+    if not devices:
+        if IS_MAC and os.geteuid() != 0:
+            return "hidden", "an unprivileged process sees no camera on macOS"
+        return "absent", "no camera on the USB bus"
+    try:
+        named = [f"{d.get_info(rs.camera_info.name)} "
+                 f"{d.get_info(rs.camera_info.serial_number)}" for d in devices]
+    except Exception as e:
+        return ("stuck" if _STUCK in str(e) else "error"), str(e).strip()
+    return "ok", " · ".join(named)
+
+
+def fix_for(state: str) -> str:
+    """The one action that clears ``state``, worded for this platform."""
+    if state == "absent":
+        return "plug the camera in, or unplug and replug its USB."
+    if state == "stuck":
+        if IS_MAC:
+            return "unplug the USB, wait ~2s, plug it back in."
+        return ("reset its USB — `sudo usbreset <id from lsusb>`, or "
+                "unplug and replug.")
+    if state == "hidden":
+        return f"re-run under sudo: {_sudo_hint()}"
+    return "check the camera and its cable."
+
+
+def _failure_text(last: str) -> str:
+    """Explain the failure and name the one action that clears it."""
+    state, detail = camera_state()
+    if state == "ok":
+        return (f"The Realsense enumerates but would not open (last error: {last}).\n"
+                "  Fix: re-run -- a camera another process just released needs a few\n"
+                "  seconds. Failing that, close whatever else is using it.")
+    return f"Realsense {state}: {detail}.\n  Fix: {fix_for(state)}"
