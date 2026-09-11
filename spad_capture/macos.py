@@ -15,6 +15,7 @@ win the next attempt, so the open is retried.
 
 from __future__ import annotations
 
+import glob
 import os
 import shlex
 import subprocess
@@ -34,6 +35,8 @@ _ATTEMPT_TIMEOUT_S = 20.0        # a blocked open never returns on its own
 # Measured: an immediate retry storm fails where a 15 s pause succeeds.
 _BACKOFF_S = (2.0, 5.0, 10.0, 0.0)
 _UNPRIVILEGED_ATTEMPTS = 1       # then report root as the next step
+_PIP_INSTALL = "pip install -e '.[rgb]'"
+_INSTALL_CMD = "conda install -c conda-forge pyrealsense2" if IS_MAC else _PIP_INSTALL
 
 T = TypeVar("T")
 
@@ -98,6 +101,37 @@ def open_with_retry(open_fn: Callable[[], T], log: Optional[Callable[[str], None
 _STUCK = "failed to set power state"
 
 
+def binding_source() -> str:
+    """Where ``pyrealsense2`` came from: ``pip``, ``conda`` or ``unknown``.
+
+    Which build is installed decides whether the camera works at all, and the
+    right build differs by platform: PyPI publishes no macOS wheel, and the
+    conda-forge build cannot reach the camera on Linux.
+    """
+    try:
+        import importlib.metadata as md
+        md.version("pyrealsense2")      # conda-forge ships no dist-info
+        return "pip"
+    except Exception:
+        pass
+    # sys.prefix, not CONDA_PREFIX: the env var is unset when the env's python
+    # is invoked by path rather than activated.
+    if glob.glob(os.path.join(sys.prefix, "conda-meta", "pyrealsense2-*.json")):
+        return "conda"
+    return "unknown"
+
+
+def _classify(err: str) -> tuple[str, str]:
+    """Name the cause behind a refused camera access."""
+    if _STUCK not in err:
+        return "error", err
+    if IS_MAC and os.geteuid() != 0:
+        return "hidden", "an unprivileged process cannot reach the camera on macOS"
+    if not IS_MAC and binding_source() == "conda":
+        return "wrong-build", "the conda-forge binding cannot reach the camera on Linux"
+    return "stuck", err
+
+
 def camera_state() -> tuple[str, str]:
     """Classify the camera as ``ok``, ``absent``, ``stuck``, ``hidden`` or ``error``.
 
@@ -111,7 +145,7 @@ def camera_state() -> tuple[str, str]:
     try:
         devices = list(rs.context().query_devices())
     except Exception as e:
-        return ("stuck" if _STUCK in str(e) else "error"), str(e).strip()
+        return _classify(str(e).strip())
     if not devices:
         if IS_MAC and os.geteuid() != 0:
             return "hidden", "an unprivileged process sees no camera on macOS"
@@ -120,7 +154,7 @@ def camera_state() -> tuple[str, str]:
         named = [f"{d.get_info(rs.camera_info.name)} "
                  f"{d.get_info(rs.camera_info.serial_number)}" for d in devices]
     except Exception as e:
-        return ("stuck" if _STUCK in str(e) else "error"), str(e).strip()
+        return _classify(str(e).strip())
     return "ok", " · ".join(named)
 
 
@@ -135,7 +169,9 @@ def fix_for(state: str) -> tuple[str, Optional[str]]:
     if state == "hidden":
         return "re-run under sudo", _sudo_hint()
     if state == "missing":
-        return "install the Realsense binding", "pip install -e '.[rgb]'"
+        return "install the Realsense binding", _INSTALL_CMD
+    if state == "wrong-build":
+        return "replace it with the PyPI wheel", _PIP_INSTALL
     return "check the camera and its cable", None
 
 

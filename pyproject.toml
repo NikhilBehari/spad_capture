@@ -25,9 +25,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The Realsense binding has no macOS wheel on PyPI; conda-forge ships both
-# platforms. environment.yml installs it, so this extra is for pip-only Linux.
-rgb = ["pyrealsense2>=2.50"]
+# PyPI publishes no macOS build, so the marker makes this extra a no-op there
+# and macOS takes the binding from conda-forge instead. On Linux the wheel is
+# the build that works: the conda-forge one cannot reach the camera.
+rgb = ["pyrealsense2>=2.58; sys_platform != 'darwin'"]
 dev = ["ruff", "pytest"]
 
 [project.scripts]

@@ -157,7 +157,22 @@ same classification drives capture failures, so a failed run names the fix.
 | `absent` | Not on the USB bus | Plug or replug it |
 | `stuck` | Enumerates, but every access raises `failed to set power state` | Reset its USB: replug, or on Linux `sudo usbreset <id from lsusb>` |
 | `hidden` | macOS only: an unprivileged process sees no camera | Re-run under `sudo` |
-| `missing` | `pyrealsense2` is not installed | `pip install -e '.[rgb]'` |
+| `missing` | `pyrealsense2` is not installed | Install it, per platform below |
+| `wrong-build` | Linux with the conda-forge binding, which cannot reach the camera | `pip install -e '.[rgb]'` |
+
+### Which Realsense build
+
+The binding is the one dependency whose source differs by platform.
+
+| Platform | Source | Why |
+|----------|--------|-----|
+| Linux | PyPI wheel, via `pip install -e '.[rgb]'` | The conda-forge build fails every device access with `failed to set power state`; the wheel works as an ordinary user |
+| macOS | conda-forge, via `conda install -c conda-forge pyrealsense2` | PyPI publishes no macOS build at all |
+
+`environment.yml` therefore leaves the binding out, and the `rgb` extra carries a
+marker so it is a no-op on macOS. `spad camera check` names the state
+`wrong-build` when the conda-forge binding is installed on Linux, so a mismatch
+reports itself instead of looking like broken hardware.
 
 `stuck` happens on Linux as well as macOS, and retrying never clears it -- the
 USB device has to be reset. On Linux that needs no physical access.

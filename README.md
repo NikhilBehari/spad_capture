@@ -25,16 +25,19 @@ firmware in [docs/tmf.md](docs/tmf.md) and [docs/st.md](docs/st.md).
 # one environment serves both sensors, on macOS and Linux alike
 conda env create -f environment.yml
 conda activate spad_capture
-pip install -e .
+pip install -e '.[rgb]'                          # Linux: also the Realsense
+conda install -c conda-forge pyrealsense2        # macOS only: the Realsense
 
 # flash the dev board (auto-installs arduino-cli and the board core if missing)
 spad tmf flash          # Arduino + TMF8828
 spad st  flash          # NUCLEO-F401RE + X-NUCLEO-53L8A1
 ```
 
-`environment.yml` takes `pyrealsense2` from conda-forge, which builds for macOS
-arm64 and Linux. PyPI has no macOS build. Without a Realsense, `pip install -e .`
-is enough on either platform; `pip install -e '.[rgb]'` adds the camera on Linux.
+The Realsense binding is the one dependency that differs by platform: PyPI has
+no macOS build, and the conda-forge build cannot reach the camera on Linux. So
+Linux takes the wheel and macOS takes conda-forge, as above. Both commands are
+safe to run on either platform. `spad camera check` reports it if the wrong build
+is installed. Without a Realsense, `pip install -e .` is all you need.
 
 ## Capture
 
