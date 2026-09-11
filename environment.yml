@@ -1,21 +1,12 @@
-# One environment for both macOS and Linux.
-#   conda env create -f environment.yml && conda activate spad_capture
-#   pip install -e '.[rgb]'
+# The interpreter only: every other dependency is declared once, in
+# pyproject.toml, and installed by pip.
 #
-# The Realsense binding is deliberately absent: the build that works differs by
-# platform, so `pip install -e '.[rgb]'` installs it on Linux, and macOS takes it
-# from conda-forge. See docs/docs.md.
+#   conda env create -f environment.yml
+#   conda activate spad_capture
+#   pip install -e '.[rgb]'                     # Linux, camera included
+#   conda install -c conda-forge pyrealsense2   # macOS, the only source there
 name: spad_capture
 channels: [conda-forge]
 dependencies:
   - python=3.11
-  - numpy
-  - opencv
-  - pyserial
-  - pydantic
-  - pyyaml
-  - click
-  - fastapi
-  - uvicorn
-  - h5py
-  - rich
+  - pip

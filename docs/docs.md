@@ -112,44 +112,39 @@ storage format (`pkl` or `h5`).
 
 ### Dot projector
 
-The Realsense projects an IR dot pattern. Depth needs it to come out dense, and
-it stamps the same pattern across the IR images. `ir_no_dots` holds the projector
-off, leaving IR lit only by the scene. With `save_depth` set the projector is
-pulsed: on for depth, off for IR.
+The projector makes depth dense and stamps its pattern across the IR images.
+`ir_no_dots` holds it off, leaving IR lit only by the scene; with `save_depth`
+set it is pulsed instead, on for depth and off for IR.
 
-Measured on a D435i, projector on then off: IR Laplacian variance 932 then 37,
-depth 98% valid then 41%. Dot-free IR costs depth density, so the two are
-separate switches.
+On a D435i, on against off: IR Laplacian variance 932 against 37, depth 98%
+valid against 41%. Dot-free IR costs depth density, hence two switches.
 
 ### Realsense on macOS
 
-macOS routes cameras through system daemons that claim the device as soon as
-anything enumerates it. They respawn on demand, so only a process that can
-release them opens the camera: **Realsense capture on macOS needs root**.
+macOS routes cameras through system daemons that claim the device on enumeration
+and respawn on demand, so only a process that can release them opens the camera:
+**Realsense capture on macOS needs root**. Linux captures run as an ordinary
+user.
 
-Nothing prompts for a password. A run that needs root stops and prints the
-command to repeat under `sudo`:
+Nothing prompts for a password. A run needing root stops and prints the command
+to repeat under `sudo`:
 
 ```
-Could not open the Realsense as this user (last error: No device connected).
-  Something else holds the camera. On macOS that is usually the system
-  camera daemons, and only root can release them.
-  Run: sudo /path/to/spad tmf capture --rgb
+Realsense hidden (an unprivileged process sees no camera on macOS).
+  Fix: re-run under sudo:
+       sudo /path/to/spad tmf capture --rgb
 ```
 
-Each open attempt must deliver frames before it counts. A Realsense can start a
-pipeline and then send nothing, which would otherwise write a run of empty
-frames.
-
-Attempts are few and the waits between them long. A camera another process just
-released needs seconds before it delivers frames, and each attempt disturbs it.
-Expect the first capture after a long-running process releases the camera to need
-a second run.
+Each attempt must deliver frames before it counts: a Realsense can start a
+pipeline and then send nothing, writing a run of empty frames. Attempts are few
+and their waits long, because a camera another process just released needs
+seconds and each attempt disturbs it. Expect the first capture after a
+long-running process releases the camera to need a second run.
 
 ### When the camera will not open
 
-`spad camera check` reports the state and the one action that clears it. The
-same classification drives capture failures, so a failed run names the fix.
+`spad camera check` reports the state and the action that clears it. The same
+classification drives capture failures, so a failed run names the fix.
 
 | State | Meaning | Fix |
 |-------|---------|-----|
@@ -159,6 +154,13 @@ same classification drives capture failures, so a failed run names the fix.
 | `hidden` | macOS only: an unprivileged process sees no camera | Re-run under `sudo` |
 | `missing` | `pyrealsense2` is not installed | Install it, per platform below |
 | `wrong-build` | Linux with the conda-forge binding, which cannot reach the camera | `pip install -e '.[rgb]'` |
+
+`stuck` happens on Linux as well as macOS, and retrying never clears it. The USB
+device has to be reset, which on Linux needs no physical access.
+
+Never `kill -9` a process holding the camera: SIGKILL mid-stream leaves it
+`stuck`, and it can then leave the bus entirely. Both backends catch `SIGINT` and
+`SIGTERM`, stop the pipeline and flush the run.
 
 ### Which Realsense build
 
@@ -170,19 +172,8 @@ The binding is the one dependency whose source differs by platform.
 | macOS | conda-forge, via `conda install -c conda-forge pyrealsense2` | PyPI publishes no macOS build at all |
 
 `environment.yml` therefore leaves the binding out, and the `rgb` extra carries a
-marker so it is a no-op on macOS. `spad camera check` names the state
-`wrong-build` when the conda-forge binding is installed on Linux, so a mismatch
-reports itself instead of looking like broken hardware.
-
-`stuck` happens on Linux as well as macOS, and retrying never clears it -- the
-USB device has to be reset. On Linux that needs no physical access.
-
-Never `kill -9` a process holding the camera. SIGKILL mid-stream leaves it
-`stuck`, and it can then disappear from the bus entirely. Both backends catch
-`SIGINT` and `SIGTERM`, stop the pipeline and flush the run.
-
-Only the root requirement is macOS-specific. Linux captures run as an ordinary
-user.
+marker making it a no-op on macOS. A mismatch reports itself as `wrong-build`
+rather than looking like broken hardware.
 
 ## CLI
 

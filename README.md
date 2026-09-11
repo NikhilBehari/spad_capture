@@ -36,11 +36,13 @@ spad tmf flash          # Arduino + TMF8828
 spad st  flash          # NUCLEO-F401RE + X-NUCLEO-53L8A1
 ```
 
-The Realsense binding is the one dependency that differs by platform: PyPI has
-no macOS build, and the conda-forge build cannot reach the camera on Linux. So
-Linux takes the wheel and macOS takes conda-forge, as above — run only the line
-for your platform. `spad camera check` names the state `wrong-build` if the other
-one is installed. Without a Realsense, `pip install -e .` is all you need.
+`environment.yml` provides only the interpreter; every dependency is declared
+once, in `pyproject.toml`.
+
+The Realsense binding is the one that differs by platform: PyPI has no macOS
+build, and the conda-forge build cannot reach the camera on Linux. Run only the
+line for your platform; `spad camera check` reports a mismatch as `wrong-build`.
+Without a Realsense, `pip install -e .` is all you need.
 
 ## Capture
 

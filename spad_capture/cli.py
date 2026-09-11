@@ -151,7 +151,8 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
 @click.option("--mode", type=click.Choice(["sequential", "timed", "manual"]), default=None,
               help="Capture-mode override.")
 @click.option("-n", "--num-frames", type=int, default=None, help="Sequential frame count.")
-@click.option("-d", "--duration", type=float, default=None, help="Timed-mode duration (s); default 60.")
+@click.option("-d", "--duration", type=float, default=None,
+              help="Timed-mode duration (s); default 60.")
 @click.option("-i", "--interval", type=float, default=None, help="Inter-frame sleep (s).")
 @click.option("--samples-per-frame", "samples_per_frame", type=int, default=None,
               help="Sensor captures averaged per output frame.")
@@ -342,19 +343,22 @@ def camera_group() -> None:
 def camera_check_cmd() -> None:
     """Report whether the Realsense is usable, and what to do if not."""
     from rich.console import Console
+    from rich.markup import escape
 
     from spad_capture.macos import camera_state, fix_for
     # soft_wrap keeps long commands on one line so they stay copy-pasteable.
     c = Console(highlight=False, soft_wrap=True)
+    w = 11                      # widest state name, so the details line up
     state, detail = camera_state()
+    # escape: a fix command can contain "[rgb]", which rich would read as markup.
     if state == "ok":
-        c.print(f"[bold green]ok[/bold green]      {detail}")
+        c.print(f"[bold green]{state:<{w}}[/bold green] {escape(detail)}")
         return
     advice, cmd = fix_for(state)
-    c.print(f"[bold red]{state}[/bold red]{'':<{max(1, 8 - len(state))}}{detail}")
-    c.print(f"[yellow]fix[/yellow]     {advice}")
+    c.print(f"[bold red]{state:<{w}}[/bold red] {escape(detail)}")
+    c.print(f"[yellow]{'fix':<{w}}[/yellow] {escape(advice)}")
     if cmd:
-        c.print(f"        [cyan]{cmd}[/cyan]")
+        c.print(f"{'':<{w}} [cyan]{escape(cmd)}[/cyan]")
     raise SystemExit(1)
 
 

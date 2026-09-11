@@ -17,32 +17,37 @@ import numpy as np
 from spad_capture.macos import open_with_retry
 
 
+_SETTLE_FRAMES = 8         # frames discarded after the projector is toggled
+_WARMUP_FRAMES = 5         # frames that must arrive before an open counts as good
+_WARMUP_TIMEOUT_MS = 2000  # per warmup frame
+
+
 def _warn(msg: str) -> None:
+    """Report a retried open attempt: progress, not failure."""
     print(f"  {msg}", flush=True)
 
 
-def _require_device(rs, explicit):
+def _require_device(rs, explicit: Optional[str]) -> Optional[str]:
     """The camera serial to open, refusing to guess when several are attached.
 
-    Called after the platform shim has released the device, so the enumeration
-    it does is the real one.
+    Runs after the daemons are released, so this enumeration is the real one.
+    ``None`` means no camera, which the open then reports.
     """
     serials = [d.get_info(rs.camera_info.serial_number) for d in rs.context().query_devices()]
     if explicit:
         if explicit not in serials:
-            raise RuntimeError(f"Realsense {explicit} not attached. Seen: {serials or 'none'}")
+            raise RuntimeError(
+                f"Realsense {explicit} not attached.\n"
+                f"  Seen: {', '.join(serials) or 'none'}\n"
+                "  Fix: pass a serial that is attached, or clear rgb.serial_number."
+            )
         return explicit
     if len(serials) > 1:
         raise RuntimeError(
             f"{len(serials)} Realsense cameras attached: {', '.join(serials)}.\n"
-            "  Fix: set rgb.serial_number in the config to choose one."
+            "  Fix: set rgb.serial_number to choose one."
         )
     return serials[0] if serials else None
-
-
-_SETTLE_FRAMES = 8         # frames discarded after the projector is toggled
-_WARMUP_FRAMES = 5         # frames that must arrive before an open counts as good
-_WARMUP_TIMEOUT_MS = 2000  # per warmup frame
 
 
 @dataclass
@@ -63,8 +68,8 @@ class RealsenseCamera:
         self.cfg = cfg
 
         def open_pipeline():
-            """Build and start a fresh pipeline. Retried as a unit: a pipeline
-            whose start failed cannot be reused."""
+            """Build and start a fresh pipeline. Retried as a unit, since a
+            pipeline whose start failed cannot be reused."""
             # A fresh context per attempt: librealsense keeps device state on the
             # context, and reusing one that just failed tends to fail again.
             ctx = rs.context()
@@ -77,10 +82,10 @@ class RealsenseCamera:
                 rcfg.enable_stream(rs.stream.color, cfg.width, cfg.height, rs.format.bgr8, cfg.fps)
             if cfg.save_depth:
                 rcfg.enable_stream(rs.stream.depth, cfg.width, cfg.height, rs.format.z16, cfg.fps)
-            if cfg.ir_left:
-                rcfg.enable_stream(rs.stream.infrared, 1, cfg.width, cfg.height, rs.format.y8, cfg.fps)
-            if cfg.ir_right:
-                rcfg.enable_stream(rs.stream.infrared, 2, cfg.width, cfg.height, rs.format.y8, cfg.fps)
+            for idx, on in ((1, cfg.ir_left), (2, cfg.ir_right)):
+                if on:
+                    rcfg.enable_stream(rs.stream.infrared, idx,
+                                       cfg.width, cfg.height, rs.format.y8, cfg.fps)
             profile = pipe.start(rcfg)
             # A start can succeed and still deliver nothing. Prove the stream
             # inside the retried unit, so a silent pipeline fails the attempt.
