@@ -22,6 +22,7 @@ from spad_capture.frame import Frame
 from spad_capture.sensors.st.parser import FrameError, read_and_parse
 from spad_capture.storage import Writer, make_writer
 from spad_capture.sensors.st.transport import VL53L8CHTransport
+from spad_capture.macos import RealsenseOpenError
 
 try:
     from spad_capture.rgb import RealsenseCamera
@@ -125,10 +126,12 @@ def _open_realsense(cfg: Config):
         )
     try:
         return RealsenseCamera(cfg.rgb)
+    except RealsenseOpenError:
+        raise                        # already names the state and the fix
     except Exception as e:
         raise RuntimeError(
-            f"Failed to open Realsense camera ({e}). Unplugged, or in use? "
-            "Or disable rgb/ir/depth to capture SPAD only."
+            f"Could not open the Realsense: {e}\n"
+            "  fix   disable rgb/ir/depth to capture SPAD only"
         ) from e
 
 

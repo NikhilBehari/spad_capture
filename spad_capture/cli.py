@@ -344,13 +344,17 @@ def camera_check_cmd() -> None:
     from rich.console import Console
 
     from spad_capture.macos import camera_state, fix_for
-    c = Console()
+    # soft_wrap keeps long commands on one line so they stay copy-pasteable.
+    c = Console(highlight=False, soft_wrap=True)
     state, detail = camera_state()
     if state == "ok":
-        c.print(f"[bold green]ok[/bold green]  {detail}")
+        c.print(f"[bold green]ok[/bold green]      {detail}")
         return
-    c.print(f"[bold red]{state}[/bold red]  {detail}\n"
-            f"[yellow]fix[/yellow]  {fix_for(state)}")
+    advice, cmd = fix_for(state)
+    c.print(f"[bold red]{state}[/bold red]{'':<{max(1, 8 - len(state))}}{detail}")
+    c.print(f"[yellow]fix[/yellow]     {advice}")
+    if cmd:
+        c.print(f"        [cyan]{cmd}[/cyan]")
     raise SystemExit(1)
 
 

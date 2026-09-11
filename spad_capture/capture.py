@@ -19,6 +19,7 @@ from spad_capture.config import CaptureMode, Config
 from spad_capture.frame import Frame
 from spad_capture.sensors.tmf.sensor import TMF8828Sensor
 from spad_capture.storage import Writer, make_writer
+from spad_capture.macos import RealsenseOpenError
 
 try:
     from spad_capture.rgb import RealsenseCamera
@@ -86,10 +87,12 @@ def run_capture(
             )
         try:
             rgb_cam = RealsenseCamera(cfg.rgb)
+        except RealsenseOpenError:
+            raise                    # already names the state and the fix
         except Exception as e:
             raise RuntimeError(
-                f"Failed to open Realsense camera ({e}). "
-                "Disconnect/unplug? Or set rgb.enabled = false to capture SPAD only."
+                f"Could not open the Realsense: {e}\n"
+                "  fix   set rgb.enabled = false to capture SPAD only"
             ) from e
 
     own_writer = writer is None

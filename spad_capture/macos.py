@@ -86,19 +86,12 @@ def open_with_retry(open_fn: Callable[[], T], log: Optional[Callable[[str], None
         if "ok" in box:
             return box["ok"]
         last = box.get("err") or f"timed out after {_ATTEMPT_TIMEOUT_S:.0f}s"
-        if log:
+        if log and len(waits) > 1:      # a lone attempt reports through the error
             log(f"realsense open {i}/{len(waits)}: {last}")
         if i < len(waits):
             if can_release:
                 release_camera()
             time.sleep(wait)
-    if not can_release:
-        raise RealsenseOpenError(
-            f"Could not open the Realsense as this user (last error: {last}).\n"
-            "  Something else holds the camera. On macOS that is usually the system\n"
-            "  camera daemons, and only root can release them.\n"
-            f"  Run: {_sudo_hint()}"
-        )
     raise RealsenseOpenError(_failure_text(last))
 
 
@@ -113,8 +106,8 @@ def camera_state() -> tuple[str, str]:
     """
     try:
         import pyrealsense2 as rs
-    except Exception as e:
-        return "error", f"pyrealsense2 is not importable ({e})"
+    except Exception:
+        return "missing", "pyrealsense2 is not installed"
     try:
         devices = list(rs.context().query_devices())
     except Exception as e:
@@ -131,25 +124,28 @@ def camera_state() -> tuple[str, str]:
     return "ok", " · ".join(named)
 
 
-def fix_for(state: str) -> str:
-    """The one action that clears ``state``, worded for this platform."""
+def fix_for(state: str) -> tuple[str, Optional[str]]:
+    """What clears ``state``, and the command that does it."""
     if state == "absent":
-        return "plug the camera in, or unplug and replug its USB."
+        return "plug the camera in, or unplug and replug its USB", None
     if state == "stuck":
         if IS_MAC:
-            return "unplug the USB, wait ~2s, plug it back in."
-        return ("reset its USB — `sudo usbreset <id from lsusb>`, or "
-                "unplug and replug.")
+            return "unplug the USB, wait ~2s, plug it back in", None
+        return "reset its USB, or unplug and replug", "sudo usbreset <id from lsusb>"
     if state == "hidden":
-        return f"re-run under sudo: {_sudo_hint()}"
-    return "check the camera and its cable."
+        return "re-run under sudo", _sudo_hint()
+    if state == "missing":
+        return "install the Realsense binding", "pip install -e '.[rgb]'"
+    return "check the camera and its cable", None
 
 
 def _failure_text(last: str) -> str:
     """Explain the failure and name the one action that clears it."""
     state, detail = camera_state()
     if state == "ok":
-        return (f"The Realsense enumerates but would not open (last error: {last}).\n"
-                "  Fix: re-run -- a camera another process just released needs a few\n"
-                "  seconds. Failing that, close whatever else is using it.")
-    return f"Realsense {state}: {detail}.\n  Fix: {fix_for(state)}"
+        return (f"Realsense would not open ({last}).\n"
+                "  Fix: re-run; a camera another process just released needs a "
+                "few seconds.")
+    advice, cmd = fix_for(state)
+    return (f"Realsense {state} ({detail}).\n"
+            f"  Fix: {advice}" + (f":\n       {cmd}" if cmd else "."))
