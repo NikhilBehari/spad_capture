@@ -31,10 +31,18 @@ command it is run with.
 
 - **sequential**: capture exactly `num_frames`, then stop.
 - **timed**: capture continuously for exactly `duration_s` seconds (60 by
-  default), then stop.
+  default), then stop. Passing `-d` without `--mode` selects this mode.
 - **manual**: capture one `num_frames` burst on startup, then pause the
   device until the next trigger. Trigger by pressing Enter in the
   terminal, or by clicking the Capture button in the live dashboard.
+
+### Dropped frames
+
+A frame is assembled from a fixed sequence of rows on the serial link. If any
+row is lost or malformed the frame would read low or empty in some zones, so it
+is discarded and re-read rather than saved. The run summary reports how many
+were dropped; a count of zero is the normal case, and a few on a long run mean
+the link is marginal, not that the data is wrong.
 
 ## `storage`
 
@@ -184,7 +192,7 @@ Flags shared by both backends. Per-backend flags are in
 |---|---|
 | `name` | `--name` |
 | `capture.num_frames` | `-n`, `--num-frames` |
-| `capture.duration_s` | `-d`, `--duration` |
+| `capture.duration_s` | `-d`, `--duration` (implies `--mode timed`) |
 | `capture.interval_s` | `-i`, `--interval` |
 | `storage.format` | `-f`, `--format` |
 | `storage.root` | `-o`, `--output-dir` |

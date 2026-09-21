@@ -79,6 +79,10 @@ ARDUINO_VID = 0x2341   # Arduino USB vendor id
 
 NUM_BINS = 128
 _SKIP_FIELDS = 3   # firmware row prefix: "#Raw,Count,Idx,..."
+# Each sub-capture streams a fixed 0..29 cycle: 3 bases x 10 channels. Modes
+# using 8 channels still emit the unused 9th, so rows can follow the
+# end-of-sub-capture marker.
+_IDX_CYCLE = 30
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +247,7 @@ class TMF8828Sensor:
         self._reader.start()
 
         self._frame_index = 0
+        self._dropped_frames = 0   # frames rebuilt from the device after lost rows
 
     # ---------- protocol primitives ----------
 
@@ -538,8 +543,9 @@ class TMF8828Sensor:
         current_sub = 0
         active_ch = self.channels_per_subcap[current_sub]
         sub_buffer.append(np.zeros((active_ch + 1, NUM_BINS), dtype=np.int64))
-        last_idx = -1
+        expected_idx = 0
         bad = False
+        synced = False      # the stream runs continuously; join at a cycle start
 
         while time.time() < deadline:
             try:
@@ -562,14 +568,17 @@ class TMF8828Sensor:
             if len(data) != NUM_BINS:
                 bad = True
                 continue
-            if idx != last_idx + 1 and not bad:
-                # Out-of-order row; abort this frame.
-                bad = True
-                continue
-            last_idx = idx
-
+            if not synced:
+                # Rows from the frame already in flight are not ours to count.
+                if idx != 0:
+                    continue
+                synced = True
             base_idx = idx // 10
             channel = idx % 10
+            if idx != expected_idx:
+                # A row was lost or arrived out of order; this frame is short.
+                bad = True
+            expected_idx = (idx + 1) % _IDX_CYCLE
             if 0 <= channel <= active_ch:
                 if base_idx == 0:
                     sub_buffer[current_sub][channel] += data
@@ -582,11 +591,16 @@ class TMF8828Sensor:
             if base_idx == 2 and channel == active_ch:
                 current_sub += 1
                 if current_sub == self.num_subcaptures:
-                    return self._assemble_frame(sub_buffer)
+                    if not bad:
+                        return self._assemble_frame(sub_buffer)
+                    # Rows were dropped, so some zones would read low or empty.
+                    # Start over rather than hand back a frame that looks valid.
+                    self._dropped_frames += 1
+                    current_sub = 0
+                    sub_buffer = []
+                    bad = False          # only a finished frame clears it
                 active_ch = self.channels_per_subcap[current_sub]
                 sub_buffer.append(np.zeros((active_ch + 1, NUM_BINS), dtype=np.int64))
-                last_idx = -1
-                bad = False
         raise TimeoutError(f"Timed out after {timeout_s}s waiting for a frame")
 
     def _assemble_frame(self, sub_buffer: list[np.ndarray]) -> np.ndarray:

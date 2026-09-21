@@ -8,7 +8,7 @@ from typing import Optional
 import click
 
 from spad_capture.capture import run_capture
-from spad_capture.config import Config, ZoneMode, load_config
+from spad_capture.config import CaptureMode, Config, ZoneMode, load_config
 from spad_capture.errors import clean as _clean
 from spad_capture.sensors.tmf.flash import flash as do_flash
 from spad_capture.sensors.st.cli import st as _st_group
@@ -63,6 +63,10 @@ def _override(cfg: Config, **kw) -> Config:
         for part in path[:-1]:
             target = target[part]
         target[path[-1]] = value
+    # A duration on its own means a timed run: without this the value would be
+    # stored and then ignored by whichever mode was configured.
+    if kw.get("duration") is not None and kw.get("mode") is None:
+        data["capture"]["mode"] = CaptureMode.TIMED.value
     return Config(**data)
 
 
@@ -152,7 +156,7 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
               help="Capture-mode override.")
 @click.option("-n", "--num-frames", type=int, default=None, help="Sequential frame count.")
 @click.option("-d", "--duration", type=float, default=None,
-              help="Timed-mode duration (s); default 60.")
+              help="Capture for this many seconds; implies --mode timed.")
 @click.option("-i", "--interval", type=float, default=None, help="Inter-frame sleep (s).")
 @click.option("--samples-per-frame", "samples_per_frame", type=int, default=None,
               help="Sensor captures averaged per output frame.")

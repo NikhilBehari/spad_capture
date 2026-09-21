@@ -357,10 +357,7 @@
         <canvas></canvas>`;
       grid.appendChild(cell);
       const cv = cell.querySelector('canvas');
-      const rect = cv.getBoundingClientRect();
-      cv.width  = Math.floor(rect.width  * window.devicePixelRatio);
-      cv.height = Math.floor(rect.height * window.devicePixelRatio);
-      cellCtx.push(cv.getContext('2d'));
+      cellCtx.push(cv.getContext('2d'));   // sized on first draw, by fitCanvas
       cellPk.push(cell.querySelector('.pk'));
       cellOutputIdx.push(it.output_index);
     }
@@ -382,7 +379,21 @@
     return [lo, hi >= lo ? hi : (B - 1)];
   }
 
+  // Canvas pixel size follows its CSS box. Measuring only at build time leaves
+  // a canvas blank forever if the page was laid out while hidden (width 0), and
+  // stale after a resize or when a side pane appears, so re-check each draw.
+  function fitCanvas(ctx) {
+    const cv = ctx.canvas;
+    const r = cv.getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    const w = Math.floor(r.width * window.devicePixelRatio);
+    const h = Math.floor(r.height * window.devicePixelRatio);
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    return true;
+  }
+
   function drawCell(ctx, hist, off, lo, hi, logY, denom) {
+    if (!fitCanvas(ctx)) return;
     const w = ctx.canvas.width, h = ctx.canvas.height;
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = '#58a6ff';
@@ -558,7 +569,15 @@
       const r = await fetch('/meta');
       const m = await r.json();
       cachedMeta = m;
-      const tags = [`zone=${m.zone_mode}`, `range=${m.range_mode}`];
+      // TMF reports zone/range modes; ST reports a grid mode and a bin window.
+      const tags = [];
+      if (m.zone_mode) tags.push(`zone=${m.zone_mode}`);
+      if (m.range_mode) tags.push(`range=${m.range_mode}`);
+      if (!m.zone_mode && m.mode) tags.push(`mode=${m.mode}`);
+      if (m.num_bins) tags.push(`${m.num_bins} bins`);
+      if (Number.isFinite(m.start_mm) && Number.isFinite(m.end_mm)) {
+        tags.push(`${Math.round(m.start_mm)}–${Math.round(m.end_mm)} mm`);
+      }
       if (m.rgb_enabled) tags.push('rgb');
       if (m.depth_enabled) tags.push('depth');
       $('meta').textContent = tags.join('  ·  ');

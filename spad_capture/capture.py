@@ -97,6 +97,7 @@ def run_capture(
 
     own_writer = writer is None
     writer = writer or make_writer(cfg)
+    dropped = 0
 
     try:
         with TMF8828Sensor(cfg.sensor, cfg.firmware, mask=cfg.resolved_mask()) as sensor:
@@ -117,6 +118,7 @@ def run_capture(
                 n_done = _run_manual(cfg, sensor, writer, frame_callback, stop, ctx)
             else:
                 raise ValueError(f"Unknown capture mode: {cfg.capture.mode}")
+            dropped = getattr(sensor, "_dropped_frames", 0)
     finally:
         # Close in the finally so an aborted capture still flushes: NpyWriter
         # buffers every frame in RAM, and HdfWriter leaves the file unflushed.
@@ -125,6 +127,9 @@ def run_capture(
         if own_writer:
             writer.close()
 
+    if dropped:
+        _console.print(f"[yellow]{dropped} frame(s) dropped[/yellow]  "
+                       "rows were lost on the serial link and the frame was re-read")
     _console.print(f"\n[bold green]done[/bold green]  captured {n_done} frames  →  [cyan]{writer.run_dir}[/cyan]")
     return n_done
 

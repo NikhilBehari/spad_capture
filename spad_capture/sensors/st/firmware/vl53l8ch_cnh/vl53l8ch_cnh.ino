@@ -28,7 +28,7 @@
  *
  *     PC -> MCU                                          MCU -> PC
  *     --------------------------------------------       ----------------------
- *     I\n                       (identify / is_alive)    STH1 VL53L8CH 1.0 ID=F0\n
+ *     I\n                       (identify / is_alive)    STH1 VL53L8CH 1.0 ID=01\n
  *     C mode sb nb bf freq integ ranging \             (configure)
  *       [agg_start_x agg_start_y agg_cols agg_rows]\n   OK CFG\n | ERR CFG <n>\n
  *     M\n                       (start ranging)          OK START\n  then frames

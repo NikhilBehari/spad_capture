@@ -149,7 +149,7 @@ at frame boundaries, never in the middle of a binary frame.
 
 | PC → MCU | Meaning | MCU → PC |
 |---|---|---|
-| `I\n` | identify / is_alive | `STH1 VL53L8CH <maj>.<min> ID=<u8 hex>\n` (e.g. `STH1 VL53L8CH 1.0 ID=F0`) |
+| `I\n` | identify / is_alive | `STH1 VL53L8CH <maj>.<min> ID=<u8 hex>\n` (e.g. `STH1 VL53L8CH 1.0 ID=01`). `ID` is the byte `vl53lmz_is_alive()` returns, not a part number; `00` means no sensor answered. |
 | `C mode sb nb bf freq integ ranging\n` | configure | `OK CFG\n`, or `ERR CFG <reason>\n` |
 | `M\n` | start ranging / streaming | `OK START\n`, then binary frames |
 | `S\n` | stop ranging | `OK STOP\n` |

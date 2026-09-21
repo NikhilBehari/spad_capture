@@ -149,7 +149,7 @@ def detect_cmd(port: Optional[str]) -> None:
     id_str = f"0x{dev_id:02X}" if dev_id is not None else "?"
     click.echo(click.style("VL53L8CH detected", fg="green", bold=True))
     click.echo(f"  port      = {cfg.sensor.port or 'auto'}")
-    click.echo(f"  device id = {id_str}")
+    click.echo(f"  is-alive  = {id_str}")   # the byte the part returns, not a part number
     click.echo(f"  firmware  = {ver}")
 
 
