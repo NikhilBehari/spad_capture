@@ -129,7 +129,10 @@ def mask_preview_cmd(path: Path, bbox_only: bool) -> None:
 @click.option("-v", "--verbose", is_flag=True, help="Verbose arduino-cli output.")
 def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -> None:
     """Compile and upload the bundled TMF8828 sketch to the Arduino."""
-    do_flash(port=port, arduino_cli=arduino_cli, verbose=verbose)
+    try:
+        do_flash(port=port, arduino_cli=arduino_cli, verbose=verbose)
+    except Exception as e:
+        raise _clean(e)
 
 
 @tmf.command("capture")

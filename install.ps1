@@ -65,7 +65,8 @@ function Assert-Windows {
 }
 
 function Find-Conda {
-  $onPath = Get-Command conda -CommandType Application -ErrorAction SilentlyContinue |
+  # conda.exe over the conda.bat shims that also sit on PATH
+  $onPath = @(Get-Command conda.exe, conda -CommandType Application -ErrorAction SilentlyContinue) |
     Select-Object -First 1 -ExpandProperty Source
   $candidates = @(
     $env:CONDA_EXE,
@@ -119,7 +120,11 @@ function Install-Miniforge {
 function Get-EnvPrefix([string]$Conda) {
   $json = Get-NativeOutput $Conda @('env', 'list', '--json')
   if (-not $json) { Die 'could not list conda environments.' }
-  try { $envs = ($json | ConvertFrom-Json).envs } catch { Die 'could not parse conda env list --json.' }
+  # Parse only the "envs" array: newer conda adds an envs_details object keyed by
+  # prefix, and PowerShell 5.1 rejects it when a prefix is listed twice in
+  # different case (C:\ and c:\), as conda does on Windows.
+  if ($json -notmatch '"envs"\s*:\s*\[[^\]]*\]') { Die 'could not parse conda env list --json.' }
+  try { $envs = ("{$($Matches[0])}" | ConvertFrom-Json).envs } catch { Die 'could not parse conda env list --json.' }
   foreach ($prefix in $envs) {
     if ((Split-Path $prefix -Leaf) -eq $Name) { return $prefix }
   }
