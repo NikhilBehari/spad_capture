@@ -1,29 +1,20 @@
-<#
-One-command setup for spad_capture on Windows (macOS and Linux: install.sh).
-
-  powershell -ExecutionPolicy Bypass -File install.ps1               # env + package + Realsense
-  powershell -ExecutionPolicy Bypass -File install.ps1 -NoCamera     # skip the Realsense binding
-  powershell -ExecutionPolicy Bypass -File install.ps1 -Flash tmf    # also flash the board (plugged in)
-
-Options: -Name <env> (default spad_capture), -NoCamera, -Flash tmf|st, -Yes (no prompts).
-Safe to re-run: an existing env is reused and the package reinstalled into it.
-Written for Windows PowerShell 5.1, the version every Windows ships with.
-#>
+# Sets up spad_capture on Windows (PowerShell 5.1). Safe to re-run.
+# Options: -Name <env>, -NoCamera, -Flash tmf|st, -Yes, -Prefix.
 [CmdletBinding()]
 param(
   [string]$Name = 'spad_capture',
   [switch]$NoCamera,
   [ValidateSet('tmf', 'st')][string]$Flash,
-  [switch]$Yes
+  [switch]$Yes,
+  [switch]$Prefix
 )
 
 $ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'   # the progress bar slows Invoke-WebRequest many times over
+$ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$RepoDir = $PSScriptRoot
-# Miniforge refuses install paths with spaces or ^%!=,() (e.g. C:\Users\Jane Doe),
-# so such profiles fall back to the system drive.
+$RepoDir = Split-Path (Split-Path $PSScriptRoot)
+# Miniforge refuses paths containing spaces or ^%!=,().
 $MiniforgeDir = Join-Path $env:USERPROFILE 'miniforge3'
 if ($MiniforgeDir -match '[ ^%!=,()]') { $MiniforgeDir = Join-Path $env:SystemDrive 'miniforge3' }
 $MiniforgeUrl = 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe'
@@ -33,11 +24,9 @@ function Step([string]$Message) { Write-Host ''; Write-Host "==> $Message" -Fore
 function Info([string]$Message) { Write-Host "    $Message" }
 function Die([string]$Message) { Write-Host ''; Write-Host "error: $Message" -ForegroundColor Red; exit 1 }
 
-# Runs a program, streams its output, and returns its exit code. Windows
-# PowerShell turns redirected stderr into terminating errors under 'Stop', so
-# native programs run under 'Continue' and are judged by exit code alone.
+# Under 'Stop', PowerShell 5.1 turns native stderr into terminating errors.
 function Invoke-Native([string]$Exe, [string[]]$Arguments, [switch]$Quiet) {
-  if (-not (Test-Path -LiteralPath $Exe)) { return 9009 }   # cmd's "not recognized" code
+  if (-not (Test-Path -LiteralPath $Exe)) { return 9009 }
   $previous = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
@@ -46,7 +35,6 @@ function Invoke-Native([string]$Exe, [string[]]$Arguments, [switch]$Quiet) {
   } finally { $ErrorActionPreference = $previous }
 }
 
-# Same, but returns stdout as one string, or $null on failure.
 function Get-NativeOutput([string]$Exe, [string[]]$Arguments) {
   if (-not (Test-Path -LiteralPath $Exe)) { return $null }
   $previous = $ErrorActionPreference
@@ -60,12 +48,11 @@ function Get-NativeOutput([string]$Exe, [string[]]$Arguments) {
 
 function Assert-Windows {
   if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
-    Die 'install.ps1 is for Windows; on macOS and Linux run ./install.sh'
+    Die 'install.ps1 is for Windows; on macOS and Linux run startup/install/install.sh'
   }
 }
 
 function Find-Conda {
-  # conda.exe over the conda.bat shims that also sit on PATH
   $onPath = @(Get-Command conda.exe, conda -CommandType Application -ErrorAction SilentlyContinue) |
     Select-Object -First 1 -ExpandProperty Source
   $candidates = @(
@@ -120,9 +107,7 @@ function Install-Miniforge {
 function Get-EnvPrefix([string]$Conda) {
   $json = Get-NativeOutput $Conda @('env', 'list', '--json')
   if (-not $json) { Die 'could not list conda environments.' }
-  # Parse only the "envs" array: newer conda adds an envs_details object keyed by
-  # prefix, and PowerShell 5.1 rejects it when a prefix is listed twice in
-  # different case (C:\ and c:\), as conda does on Windows.
+  # Only "envs": PowerShell 5.1 rejects envs_details' case-duplicate keys.
   if ($json -notmatch '"envs"\s*:\s*\[[^\]]*\]') { Die 'could not parse conda env list --json.' }
   try { $envs = ("{$($Matches[0])}" | ConvertFrom-Json).envs } catch { Die 'could not parse conda env list --json.' }
   foreach ($prefix in $envs) {
@@ -150,7 +135,6 @@ function Initialize-Env([string]$Conda) {
   return $prefix
 }
 
-# PyPI ships pyrealsense2 wheels for Windows, so the [rgb] extra covers the camera.
 function Install-Package([string]$Prefix) {
   $target = if ($NoCamera) { '.' } else { '.[rgb]' }
   Push-Location -LiteralPath $RepoDir
@@ -163,8 +147,7 @@ function Install-Package([string]$Prefix) {
   }
 }
 
-# spad's own arduino-cli bootstrap needs a POSIX shell, so on Windows the
-# installer drops arduino-cli.exe into the env's Scripts dir, on PATH once activated.
+# spad's own arduino-cli bootstrap needs a POSIX shell.
 function Install-ArduinoCli([string]$Prefix) {
   $exe = Join-Path $Prefix 'Scripts\arduino-cli.exe'
   if (Test-Path -LiteralPath $exe) { Info 'arduino-cli already in the env'; return }
@@ -198,6 +181,7 @@ function Test-Install([string]$Prefix) {
 
 function Main {
   Assert-Windows
+  if ($Prefix) { $conda = Find-Conda; if ($conda) { Get-EnvPrefix $conda }; exit 0 }
 
   Step 'Locating conda'
   $conda = Find-Conda
@@ -218,7 +202,7 @@ function Main {
 
   if ($Flash) {
     Step "Flashing the $Flash board"
-    $env:PATH = "$(Join-Path $prefix 'Scripts');$env:PATH"   # so spad finds arduino-cli
+    $env:PATH = "$(Join-Path $prefix 'Scripts');$env:PATH"
     $code = Invoke-Native (Join-Path $prefix 'Scripts\spad.exe') @($Flash, 'flash')
     if ($code -ne 0) { Die "flashing failed; the env is installed, so fix the board and run: spad $Flash flash" }
   }

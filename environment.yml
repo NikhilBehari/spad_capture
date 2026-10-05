@@ -1,7 +1,4 @@
-# The interpreter only: every other dependency is declared once, in
-# pyproject.toml, and installed by pip. ./install.sh builds the env from this
-# file and installs the rest; nodefaults keeps the Anaconda channel (and its
-# terms-of-service prompt) out of the solve.
+# The interpreter only; dependencies live in pyproject.toml.
 name: spad_capture
 channels: [conda-forge, nodefaults]
 dependencies:

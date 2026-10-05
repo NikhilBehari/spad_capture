@@ -135,8 +135,8 @@ def flash_cmd(port: Optional[str], arduino_cli: Optional[Path], verbose: bool) -
     """Compile and upload the bundled TMF8828 sketch to the Arduino."""
     try:
         do_flash(port=port, arduino_cli=arduino_cli, verbose=verbose)
-    except Exception as e:
-        raise _clean(e)
+    except (ValueError, FileNotFoundError, RuntimeError) as e:
+        raise _clean(e) from None
 
 
 @tmf.command("capture")
