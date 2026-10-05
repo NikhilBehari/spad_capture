@@ -21,28 +21,56 @@ firmware in [docs/tmf.md](docs/tmf.md) and [docs/st.md](docs/st.md).
 
 ## Install
 
+One command, run from the repo root, sets up everything: conda (installs
+Miniforge if none is found), the `spad_capture` environment, the package, and
+the Realsense binding from the right source for your platform.
+
 ```bash
-# one environment serves both sensors, on macOS and Linux alike
+./install.sh                                           # macOS, Linux
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1   # Windows
+```
+
+Then `conda activate spad_capture`. Re-running is safe: an existing environment
+is reused and the package reinstalled into it.
+
+| `install.sh` | `install.ps1` | effect |
+|---|---|---|
+| `--no-camera` | `-NoCamera` | skip the Realsense binding |
+| `--flash tmf` / `--flash st` | `-Flash tmf` / `-Flash st` | flash the dev board at the end (board plugged in) |
+| `--name NAME` | `-Name NAME` | environment name (default `spad_capture`) |
+| `--yes` | `-Yes` | no prompts (e.g. before installing Miniforge) |
+
+Flash a board any time later with `spad tmf flash` (Arduino + TMF8828) or
+`spad st flash` (NUCLEO-F401RE + X-NUCLEO-53L8A1); `arduino-cli` and the board
+core install themselves on first use. On Windows the installer puts
+`arduino-cli` into the environment up front, since that auto-install needs a
+POSIX shell.
+
+<details>
+<summary>Manual install (what the scripts do)</summary>
+
+```bash
 conda env create -f environment.yml
 conda activate spad_capture
 pip install -e .
 
 # the Realsense binding, from whichever source works on your platform
-pip install -e '.[rgb]'                     # Linux
+pip install -e '.[rgb]'                     # Linux, Windows
 conda install -c conda-forge pyrealsense2   # macOS
-
-# flash the dev board (auto-installs arduino-cli and the board core if missing)
-spad tmf flash          # Arduino + TMF8828
-spad st  flash          # NUCLEO-F401RE + X-NUCLEO-53L8A1
 ```
+
+</details>
 
 `environment.yml` provides only the interpreter; every dependency is declared
 once, in `pyproject.toml`.
 
 The Realsense binding is the one that differs by platform: PyPI has no macOS
-build, and the conda-forge build cannot reach the camera on Linux. Run only the
-line for your platform; `spad camera check` reports a mismatch as `wrong-build`.
-Without a Realsense, `pip install -e .` is all you need.
+build, and the conda-forge build cannot reach the camera on Linux. The
+installers pick the right one; `spad camera check` reports a mismatch as
+`wrong-build`.
 
 ## Capture
 
