@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sets up spad_capture on macOS and Linux. Safe to re-run; see --help.
+# Sets up spad_capture on macOS and Linux.
 set -euo pipefail
 
 ENV_NAME=spad_capture

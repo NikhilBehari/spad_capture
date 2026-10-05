@@ -1,4 +1,4 @@
-# Sets up spad_capture on Windows (PowerShell 5.1). Safe to re-run.
+# Sets up spad_capture on Windows (PowerShell 5.1).
 # Options: -Name <env>, -NoCamera, -Flash tmf|st, -Yes, -Prefix.
 [CmdletBinding()]
 param(

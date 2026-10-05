@@ -28,7 +28,7 @@ startup/install/install.sh                                           # macOS, Li
 powershell -ExecutionPolicy Bypass -File startup\install\install.ps1   # Windows
 ```
 
-Then `conda activate spad_capture`. Safe to re-run; `--help` lists the options.
+Then `conda activate spad_capture`.
 Flash a board with `spad tmf flash` or `spad st flash`.
 
 <details>
@@ -39,19 +39,12 @@ conda env create -f environment.yml
 conda activate spad_capture
 pip install -e .
 
-# the Realsense binding, from whichever source works on your platform
+# Realsense
 pip install -e '.[rgb]'                     # Linux, Windows
 conda install -c conda-forge pyrealsense2   # macOS
 ```
 
 </details>
-
-`environment.yml` provides only the interpreter; every dependency is declared
-once, in `pyproject.toml`.
-
-The Realsense binding differs by platform: PyPI has no macOS build, and the
-conda-forge build cannot reach the camera on Linux. The installers pick the
-right one; `spad camera check` reports a mismatch as `wrong-build`.
 
 ## Capture
 
@@ -72,20 +65,16 @@ Each backend has a few more commands of its own (`flash`, `viz`, and the ST's
 `detect` / `info`): [docs/tmf.md](docs/tmf.md), [docs/st.md](docs/st.md).
 
 Add `--viz` for the live dashboard at `http://127.0.0.1:8888`, and
-`--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture.
-`--ir-no-dots` holds the dot projector off, leaving IR free of the projected
-pattern. `spad camera check` reports whether the camera is usable and what to do
-if not. Realsense capture on macOS needs `sudo`, and the run prints the command
-to repeat. See [docs/docs.md](docs/docs.md#realsense-on-macos).
+`--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture
+(`--ir-no-dots` turns off the dot projector). `spad camera check` diagnoses the
+camera. Realsense capture on macOS needs `sudo`:
+[docs/docs.md](docs/docs.md#realsense-on-macos).
 
-Each YAML declares its `backend:`, checked against the command it is run with,
-so a config used with the wrong backend is an error.
+Each YAML declares its `backend:` (`tmf` or `st`).
 
 ## Key parameters
 
-The main fields tuned per capture. Set each one either in a YAML config or
-with its CLI flag; the block below lists both side by side. Common fields
-have a flag, the rest are YAML-only. Full schema and complete mapping:
+The main fields tuned per capture, as YAML and as CLI flags. Full schema:
 [docs](docs/docs.md) · [tmf](docs/tmf.md) · [st](docs/st.md).
 
 ```yaml
@@ -129,8 +118,7 @@ Flags override the config file:
 
 ## Selecting zones
 
-Both sensors let you choose which part of the array reports a histogram; they
-just express it differently.
+Both sensors let you choose which part of the array reports a histogram.
 
 **TMF8828 — per-pixel mask.** Author a SPAD layout in YAML on the AMS 12 x 18
 visual frame from DS000693 Fig 30/31/32. Each digit names a zone; pixels
@@ -165,9 +153,8 @@ time-multiplexed split:
 [docs/tmf.md § mask](docs/tmf.md#mask-user-defined-spad-layout-zone_modecustom-only).
 
 **VL53L8CH — rectangular ROI.** Select a rectangle on the fixed 4x4 or 8x8
-grid with `--zone ROW,COL` for one zone or `--roi` for a block. The device
-applies it before streaming, so frames arrive already shaped to the ROI. Fewer
-zones also free CNH memory, which buys more bins over a longer window:
+grid with `--zone ROW,COL` for one zone or `--roi` for a block. Fewer zones
+free CNH memory for more bins over a longer window:
 
 ```bash
 spad st capture --zone 2,2 --end-mm 4000     # one zone, many bins
