@@ -4,47 +4,29 @@ Capture pipeline for SPAD time-of-flight sensors. Records per-zone histograms
 with an integrated live web dashboard, optional colocated Realsense capture
 (RGB / depth / IR), and one storage format per run.
 
-> **One-click start:** double-click `startup/mac.command` (macOS) or `startup/windows.bat` (Windows).
-
-Two sensors, one package:
+It supports two sensors:
 
 | backend | sensor | histograms |
 |---|---|---|
 | `spad tmf` | AMS OSRAM **TMF8828** | per-zone ToF counts from predefined or user-defined SPAD masks |
 | `spad st`  | ST **VL53L8CH** | per-zone CNH magnitudes over a configurable mm window |
 
-Everything below the sensor is shared: config loading, storage, the dashboard
-and the Realsense reader. Sensor-specific code sits under
-`spad_capture/sensors/<backend>/`.
-
-Every CLI flag can be supplied as a YAML config and passed with `-c`. Shared
-fields are in [docs/docs.md](docs/docs.md); per-sensor fields, masks and
-firmware in [docs/tmf.md](docs/tmf.md) and [docs/st.md](docs/st.md).
-
 ## Install
 
 ```bash
-startup/install/install.sh                                           # macOS, Linux
-powershell -ExecutionPolicy Bypass -File startup\install\install.ps1   # Windows
-```
-
-Then `conda activate spad_capture`.
-Flash a board with `spad tmf flash` or `spad st flash`.
-
-<details>
-<summary>Manual install</summary>
-
-```bash
+# setup spad env
 conda env create -f environment.yml
 conda activate spad_capture
 pip install -e .
 
-# Realsense
+# flash the dev board
+spad tmf flash          # Arduino + TMF8828
+spad st  flash          # NUCLEO-F401RE + X-NUCLEO-53L8A1
+
+# optional Realsense camera support
 pip install -e '.[rgb]'                     # Linux, Windows
 conda install -c conda-forge pyrealsense2   # macOS
 ```
-
-</details>
 
 ## Capture
 
@@ -65,12 +47,9 @@ Each backend has a few more commands of its own (`flash`, `viz`, and the ST's
 `detect` / `info`): [docs/tmf.md](docs/tmf.md), [docs/st.md](docs/st.md).
 
 Add `--viz` for the live dashboard at `http://127.0.0.1:8888`, and
-`--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture
-(`--ir-no-dots` turns off the dot projector). `spad camera check` diagnoses the
-camera. Realsense capture on macOS needs `sudo`:
+`--rgb --save-depth --ir-left --ir-right` for colocated Realsense capture.
+`spad camera check` diagnoses the camera. Realsense capture on macOS needs `sudo`:
 [docs/docs.md](docs/docs.md#realsense-on-macos).
-
-Each YAML declares its `backend:` (`tmf` or `st`).
 
 ## Key parameters
 
@@ -120,9 +99,9 @@ Flags override the config file:
 
 Both sensors let you choose which part of the array reports a histogram.
 
-**TMF8828 — per-pixel mask.** Author a SPAD layout in YAML on the AMS 12 x 18
-visual frame from DS000693 Fig 30/31/32. Each digit names a zone; pixels
-sharing a digit sum into one output histogram, so zones can be any shape.
+**TMF8828 — per-pixel mask.** Author a SPAD layout in YAML on the 12 x 18 SPAD
+grid. Each digit names a zone; pixels sharing a digit sum into one output
+histogram, so zones can be any shape.
 
 ```yaml
 # four 2x2 zones around the optical center
@@ -148,8 +127,7 @@ spad tmf mask preview  configs/tmf/masks/four_center_quads.yaml
 spad tmf capture --mask configs/tmf/masks/four_center_quads.yaml
 ```
 
-Coordinate convention, validation rules, dummy pixels, and the single-shot vs.
-time-multiplexed split:
+Mask rules and coordinates:
 [docs/tmf.md § mask](docs/tmf.md#mask-user-defined-spad-layout-zone_modecustom-only).
 
 **VL53L8CH — rectangular ROI.** Select a rectangle on the fixed 4x4 or 8x8

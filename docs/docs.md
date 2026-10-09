@@ -181,7 +181,7 @@ The binding is the one dependency whose source differs by platform.
 | Windows | PyPI wheel, via `pip install -e '.[rgb]'` | PyPI publishes Windows wheels |
 
 `environment.yml` therefore leaves the binding out, and the `rgb` extra carries a
-marker making it a no-op on macOS. `install.sh` / `install.ps1` pick the right source. A mismatch reports itself as `wrong-build`
+marker making it a no-op on macOS. A mismatch reports itself as `wrong-build`
 rather than looking like broken hardware.
 
 ## CLI
