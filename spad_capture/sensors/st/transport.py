@@ -269,6 +269,12 @@ class VL53L8CHTransport:
         search resumes from the next byte (no raise).
         """
         assert self._serial is not None
+        try:
+            return self._read_frame()
+        except (serial.SerialException, OSError):
+            raise RuntimeError("The NUCLEO board was disconnected.") from None
+
+    def _read_frame(self) -> bytes:
         ser = self._serial
         sync = self._SYNC
         n_sync = len(sync)

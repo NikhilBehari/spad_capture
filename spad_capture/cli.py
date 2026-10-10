@@ -91,7 +91,7 @@ def mask_validate_cmd(path: Path) -> None:
     """Check a mask config against the device's documented rules."""
     import yaml
     from spad_capture.sensors.tmf.mask import CustomMask, validate, preview
-    raw = yaml.safe_load(path.read_text()) or {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     section = raw.get("mask", raw)  # accept either a full config or a bare mask dict
     if not isinstance(section, dict):
         raise click.ClickException(f"No `mask:` section found in {path}.")
@@ -120,7 +120,7 @@ def mask_preview_cmd(path: Path, bbox_only: bool) -> None:
     """Render an ASCII visualization of a mask config."""
     import yaml
     from spad_capture.sensors.tmf.mask import CustomMask, preview
-    raw = yaml.safe_load(path.read_text()) or {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     section = raw.get("mask", raw)
     mask = CustomMask(**section)
     click.echo(preview(mask, full_area=not bbox_only))
@@ -206,7 +206,7 @@ def capture_cmd(config_path, mask_path, port, zone, range_, mode, num_frames, du
         )
         if mask_path is not None:
             import yaml as _yaml
-            raw = _yaml.safe_load(mask_path.read_text()) or {}
+            raw = _yaml.safe_load(mask_path.read_text(encoding="utf-8")) or {}
             section = raw.get("mask", raw) if isinstance(raw, dict) else None
             if not isinstance(section, dict):
                 raise click.ClickException(f"No `mask:` section found in {mask_path}.")

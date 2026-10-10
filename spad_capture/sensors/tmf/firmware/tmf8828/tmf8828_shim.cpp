@@ -24,6 +24,7 @@
 #include "tmf8828.h"
 #include "Arduino.h"
 #include <Wire.h>
+#include <util/crc16.h>
 
 
 void delayInMicroseconds ( uint32_t wait )
@@ -161,8 +162,23 @@ void printResults ( void * dptr, uint8_t * data, uint8_t len )
   }
 }
 
+// Raw histograms, binary: <0x02><sub_packet_number><data_0>..<data_127><crc16_hi><crc16_lo>
+static void sendRawHistogram ( uint8_t number, uint8_t * bins )
+{
+  uint16_t crc = _crc_xmodem_update( 0xFFFF, number );
+  uint8_t i;
+  for ( i = 0; i < TMF8828_NUMBER_OF_BINS_PER_CHANNEL; i++ )
+  {
+    crc = _crc_xmodem_update( crc, bins[ i ] );
+  }
+  Serial.write( 0x02 );
+  Serial.write( number );
+  Serial.write( bins, TMF8828_NUMBER_OF_BINS_PER_CHANNEL );
+  Serial.write( (uint8_t)( crc >> 8 ) );
+  Serial.write( (uint8_t)crc );
+}
+
 // Print histograms:
-// #Raw,<i2c_slave_address>,<sub_packet_number>,<data_0>,<data_1>,..,,<data_127>
 // #Cal,<i2c_slave_address>,<sub_packet_number>,<data_0>,<data_1>,..,,<data_127>
 void printHistogram ( void * dptr, uint8_t * data, uint8_t len )
 {
@@ -173,7 +189,8 @@ void printHistogram ( void * dptr, uint8_t * data, uint8_t len )
     uint8_t * ptr = &( data[ RESULT_REG( SUBPACKET_PAYLOAD_0 ) ] );
     if ( data[0] & TMF8828_COM_HIST_DUMP__histogram__raw_24_bit_histogram )
     {
-      PRINT_STR( "#Raw" );
+      sendRawHistogram( data[ RESULT_REG( SUBPACKET_NUMBER ) ], ptr );
+      return;
     }
     else if ( data[0] & TMF8828_COM_HIST_DUMP__histogram__electrical_calibration_24_bit_histogram )
     {

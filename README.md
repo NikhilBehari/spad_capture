@@ -1,5 +1,11 @@
 # spad_capture
 
+<table align="center"><tr>
+<td valign="middle"><a href="https://github.com/NikhilBehari/spad_capture/releases/latest"><img src="docs/spad_app.png" width="56" align="middle" alt="SPAD App"></a></td>
+<td valign="middle">Prefer a one-click setup? Download the <b>SPAD App</b>:<br>
+<a href="https://github.com/NikhilBehari/spad_capture/releases/latest/download/SPAD-App-mac.zip">Download for Mac</a> · <a href="https://github.com/NikhilBehari/spad_capture/releases/latest/download/SPAD-App-win.zip">Download for Windows</a></td>
+</tr></table>
+
 Capture pipeline for SPAD time-of-flight sensors. Records per-zone histograms
 with an integrated live web dashboard, optional colocated Realsense capture
 (RGB / depth / IR), and one storage format per run.
@@ -20,8 +26,8 @@ conda activate spad_capture
 pip install -e .
 
 # flash the dev board
-spad tmf flash          # Arduino + TMF8828
-spad st  flash          # NUCLEO-F401RE + X-NUCLEO-53L8A1
+spad tmf flash          # for AMS SPADs
+spad st  flash          # for ST SPADs
 
 # optional Realsense camera support
 pip install -e '.[rgb]'                     # Linux, Windows

@@ -458,6 +458,6 @@ def load_config(path: Path | str | None) -> Config:
     p = Path(path).expanduser().resolve()
     if not p.exists():
         raise FileNotFoundError(f"Config file not found: {p}")
-    raw = yaml.safe_load(p.read_text()) or {}
+    raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     check_backend(raw, "st", p)
     return Config(**raw)

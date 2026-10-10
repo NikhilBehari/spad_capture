@@ -106,7 +106,7 @@ def run_capture(
 
     _console.print(
         f"\n[bold green]done[/bold green]  captured {n_done} frames  →  "
-        f"[cyan]{writer.run_dir}[/cyan]"
+        f"[cyan]{writer.run_dir or 'not saved'}[/cyan]"
     )
     return n_done
 
@@ -279,7 +279,7 @@ def _print_banner(cfg: Config, device: dict, rgb_cam, writer: Writer,
                     + "  ·  ".join(streams) + "  [dim](background thread)[/dim]")
         if rgb_cam.pulse_emitter and cfg.capture.mode == CaptureMode.MANUAL:
             tbl.add_row("projector", "off per burst (IR max-held) · on for the depth shot")
-    tbl.add_row("output", f"{cfg.storage.format.value}  →  [cyan]{writer.run_dir}[/cyan]")
+    tbl.add_row("output", f"{cfg.storage.format.value}  →  [cyan]{writer.run_dir or 'not saved'}[/cyan]")
     if viz_urls:
         tbl.add_row("viz", "\n".join(f"[link={u}]{u}[/link]" for u in viz_urls))
     notes = cfg.adjustments()

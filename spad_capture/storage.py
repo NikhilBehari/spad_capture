@@ -102,10 +102,10 @@ class Writer(ABC):
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.metadata = _build_metadata(cfg)
         if cfg.storage.save_metadata:
-            (self.run_dir / "metadata.json").write_text(_metadata_to_json(self.metadata))
+            (self.run_dir / "metadata.json").write_text(_metadata_to_json(self.metadata), encoding="utf-8")
         if cfg.storage.save_resolved_config:
             (self.run_dir / "config.yaml").write_text(
-                yaml.safe_dump(cfg.model_dump(mode="json"), sort_keys=False)
+                yaml.safe_dump(cfg.model_dump(mode="json"), sort_keys=False), encoding="utf-8"
             )
 
     def update_calibration(self, calibration: dict) -> None:
@@ -125,7 +125,7 @@ class Writer(ABC):
 
     def _rewrite_metadata(self) -> None:
         if self.cfg.storage.save_metadata:
-            (self.run_dir / "metadata.json").write_text(_metadata_to_json(self.metadata))
+            (self.run_dir / "metadata.json").write_text(_metadata_to_json(self.metadata), encoding="utf-8")
 
     @property
     @abstractmethod
@@ -263,11 +263,19 @@ class HdfWriter(Writer):
 
 
 class NullWriter(Writer):
-    """No-op writer; still creates the run dir + sidecars but writes no data."""
+    """Saves nothing: no run dir, no data, no sidecars."""
+
+    def __init__(self, cfg: Any):
+        self.cfg = cfg
+        self.run_dir = None
+        self.metadata = _build_metadata(cfg)
+
+    def _rewrite_metadata(self) -> None:
+        pass
 
     @property
-    def path(self) -> Path:
-        return self.run_dir
+    def path(self) -> None:
+        return None
 
     def write(self, frame: Frame) -> None:
         pass
@@ -383,7 +391,7 @@ def load(path: Path | str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     sidecar_meta: Optional[dict[str, Any]] = None
     if sidecar.exists():
         try:
-            sidecar_meta = json.loads(sidecar.read_text())
+            sidecar_meta = json.loads(sidecar.read_text(encoding="utf-8"))
         except Exception:
             sidecar_meta = None
     def _prefer_sidecar(embedded: dict[str, Any]) -> dict[str, Any]:
@@ -411,7 +419,7 @@ def load(path: Path | str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         ts = np.load(ts_path) if ts_path.exists() else None
         # Per-run metadata lives next to the data file inside the run dir.
         meta_path = p.parent / "metadata.json"
-        metadata = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+        metadata = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
         frames = [
             {"index": int(ts[i, 0]) if ts is not None else i,
              "timestamp": float(ts[i, 1]) if ts is not None else 0.0,
@@ -437,7 +445,7 @@ def load(path: Path | str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if ext == "npz":
         with np.load(p) as z:
             data = {k: z[k] for k in z.files}
-        metadata = json.loads(sidecar.read_text()) if sidecar.exists() else {}
+        metadata = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.exists() else {}
         at = {name: dict(zip(data[key].tolist(), data[name]))
               for name, (_, key) in _PLANES.items() if name in data and key in data}
         frames = []

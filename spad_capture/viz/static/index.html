@@ -18,14 +18,15 @@
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
     header { padding: 12px 18px; border-bottom: 1px solid var(--grid); display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
     header h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-    header .meta { color: var(--muted); font-size: 12px; }
+    #meta { display: contents; }
     .controls { margin-left: auto; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
     .controls label { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
     .controls input[type="number"] { width: 74px; }
     .controls input, .controls select {
       background: var(--cell-bg); color: var(--fg); border: 1px solid var(--grid);
-      border-radius: 4px; padding: 4px 8px; font: inherit;
+      border-radius: 4px; padding: 0 8px; font: inherit; font-size: 12px;
     }
+    .controls input[type="number"], .controls .toggle { height: 24px; }
     .controls input:focus { outline: 1px solid var(--accent); }
     main { padding: 18px; display: grid; gap: 16px; grid-template-columns: 1fr;
             align-items: center; }
@@ -66,7 +67,9 @@
     #replay-bar.show { display: flex; }
     #replay-bar #scrub { flex: 1; }
     .footer { padding: 10px 18px; color: var(--muted); border-top: 1px solid var(--grid); font-size: 12px; display: flex; gap: 18px; flex-wrap: wrap; }
-    .pill { padding: 2px 8px; border-radius: 999px; background: var(--cell-bg); border: 1px solid var(--grid); }
+    #status { padding: 0 8px; border: 1px solid var(--grid); border-radius: 999px; }
+    #status::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px;
+                      border-radius: 50%; background: currentColor; vertical-align: 1px; }
     .ok { color: var(--good); }
     .stop { color: var(--warn); }
     button { background: var(--cell-bg); color: var(--fg); border: 1px solid var(--grid); border-radius: 4px; padding: 4px 10px; font: inherit; cursor: pointer; min-width: 32px; }
@@ -74,6 +77,7 @@
     button.active { border-color: var(--accent); color: var(--accent); }
     button:disabled { opacity: .4; cursor: not-allowed; }
     .toggle { font-size: 11px; padding: 2px 8px; min-width: auto; }
+    .toggle svg { width: 12px; height: 12px; vertical-align: -2px; }
 
     /* Mask modal */
     .modal-backdrop {
@@ -164,20 +168,19 @@
 </head>
 <body>
   <header>
-    <h1>spad_capture <span id="mode-tag" class="pill"></span></h1>
-    <div class="meta" id="meta">connecting…</div>
+    <h1>spad_capture</h1>
     <div class="controls">
       <label title="cap the histogram y-axis (leave blank for auto-scale)">y-max <input id="ymax" type="number" placeholder="auto" min="1" /></label>
-      <label title="lowest time-bin to display (0–127)">bin from <input id="binmin" type="number" placeholder="0" min="0" max="127" /></label>
-      <label title="highest time-bin to display (0–127)">to <input id="binmax" type="number" placeholder="127" min="0" max="127" /></label>
+      <label title="lowest time-bin to display">bin from <input id="binmin" type="number" placeholder="0" min="0" /></label>
+      <label title="highest time-bin to display">to <input id="binmax" type="number" min="0" /></label>
       <label title="plot counts on a log scale"><input id="logy" type="checkbox" /> log-y</label>
-      <button class="toggle" id="t-rgb" disabled title="no rgb stream in this capture">rgb</button>
-      <button class="toggle" id="t-depth" disabled title="no depth stream in this capture">depth</button>
-      <button class="toggle" id="t-ir" disabled title="no ir stream in this capture">ir-L</button>
-      <button class="toggle" id="t-ir-right" disabled title="no ir stream in this capture">ir-R</button>
+      <button class="toggle" id="t-rgb" hidden title="show/hide rgb camera pane">rgb</button>
+      <button class="toggle" id="t-depth" hidden title="show/hide depth pane">depth</button>
+      <button class="toggle" id="t-ir" hidden title="show/hide ir-left pane">ir-L</button>
+      <button class="toggle" id="t-ir-right" hidden title="show/hide ir-right pane">ir-R</button>
       <button class="toggle" id="t-capture" hidden title="trigger a manual-mode burst (writes num_frames frames to disk)">capture</button>
       <button class="toggle" id="t-mask" title="show mask layout and capture info">info</button>
-      <button class="toggle" id="t-theme" title="toggle light / dark theme">☾</button>
+      <button class="toggle" id="t-theme" title="toggle light / dark theme"></button>
     </div>
   </header>
 
@@ -220,12 +223,13 @@
     </label>
   </div>
   <div class="footer">
+    <div id="status">connecting…</div>
+    <div id="meta"></div>
     <div>frame <span id="frame_idx">—</span></div>
     <div title="highest single-bin count across displayed zones">peak count <span id="peak">—</span></div>
     <div title="sum of all bins across displayed zones (filtered to selected bin range)">total counts <span id="sum">—</span></div>
     <div title="frames per second (rolling average)">fps <span id="fps">—</span></div>
     <div title="wall-clock time of the most recent frame">last update <span id="last">—</span></div>
-    <div class="pill" id="status">connecting…</div>
   </div>
 
 <script>
@@ -245,15 +249,15 @@
   // Until the first real frame arrives, show a clean placeholder so users who
   // open the page during sensor init don't see an empty void.
   document.body.classList.add('waiting');
-  let H = 0, W = 0, B = 128;
+  let H = 0, W = 0, B = 0;
   let cellCtx = [], cellPk = [];
   let last_t = performance.now();
   let smoothed_fps = 0;
-  let max_seen = 1;
+  let max_seen = 1, seen_t = 0;
   let lastFrame = null;
   let lastRgbUrl = null;
   let lastDepthUrl = null;
-  let ws = null;
+  let ws = null, modeLabel = 'live';
   let hasRgbStream = false;
   let hasIrStream = false, hasIrRightStream = false;
   let lastIrUrl = null, lastIrRightUrl = null;
@@ -264,15 +268,23 @@
   $('t-depth').addEventListener('click', () => { showDepth = !showDepth; updatePanes(); });
   $('t-ir').addEventListener('click', () => { showIr = !showIr; updatePanes(); });
   $('t-ir-right').addEventListener('click', () => { showIrRight = !showIrRight; updatePanes(); });
-  // Light/dark theme toggle (persisted across reloads).
+  // Theme follows the system unless the toggle picks the other one.
+  const THEME_ICONS = {
+    light: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"/></svg>',
+    dark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M13.5 10.2A6 6 0 0 1 5.8 2.5a6 6 0 1 0 7.7 7.7z"/></svg>',
+  };
+  const systemLight = matchMedia('(prefers-color-scheme: light)');
+  const systemTheme = () => systemLight.matches ? 'light' : 'dark';
   const setTheme = (t) => {
     document.documentElement.classList.toggle('light', t === 'light');
-    $('t-theme').textContent = t === 'light' ? '☀' : '☾';
-    localStorage.setItem('theme', t);
+    $('t-theme').innerHTML = THEME_ICONS[t];
   };
-  setTheme(localStorage.getItem('theme') || 'dark');
+  setTheme(localStorage.getItem('theme-choice') || systemTheme());
+  systemLight.addEventListener('change', () => setTheme(localStorage.getItem('theme-choice') || systemTheme()));
   $('t-theme').addEventListener('click', () => {
-    setTheme(document.documentElement.classList.contains('light') ? 'dark' : 'light');
+    const t = document.documentElement.classList.contains('light') ? 'dark' : 'light';
+    t === systemTheme() ? localStorage.removeItem('theme-choice') : localStorage.setItem('theme-choice', t);
+    setTheme(t);
   });
   ['ymax','binmin','binmax','logy'].forEach(id => {
     $(id).addEventListener('input', () => { if (lastFrame) render(lastFrame); });
@@ -289,12 +301,12 @@
     $('pane-ir-right').classList.toggle('hidden', !ir2);
     $('t-rgb').classList.toggle('active', r);
     $('t-depth').classList.toggle('active', d);
-    $('t-rgb').disabled = !hasRgbStream;
-    $('t-depth').disabled = !hasDepthStream;
+    $('t-rgb').hidden = !hasRgbStream;
+    $('t-depth').hidden = !hasDepthStream;
     $('t-ir').classList.toggle('active', il);
     $('t-ir-right').classList.toggle('active', ir2);
-    $('t-ir').disabled = !hasIrStream;
-    $('t-ir-right').disabled = !hasIrRightStream;
+    $('t-ir').hidden = !hasIrStream;
+    $('t-ir-right').hidden = !hasIrRightStream;
   }
 
   // `cellOutputIdx[i]` maps grid cell i → histogram output index it should
@@ -430,7 +442,10 @@
       lastLabelsKey = labelsKey;
       buildGrid(h, w);
     }
-    B = b;
+    if (b !== B) {
+      B = b;
+      $('binmax').placeholder = $('binmax').max = $('binmin').max = B - 1;
+    }
     const [lo, hi] = getRange();
     const logY = $('logy').checked;
     const ymaxManual = parseFloat($('ymax').value);
@@ -447,7 +462,10 @@
         total += v;
       }
     }
-    max_seen = Math.max(peak, max_seen * 0.95);
+    // Rises with a peak at once, then halves each second: the same at any frame rate.
+    const now = performance.now();
+    max_seen = Math.max(1, peak, max_seen * 0.5 ** ((now - seen_t) / 1000));
+    seen_t = now;
     const vmax = (Number.isFinite(ymaxManual) && ymaxManual > 0) ? ymaxManual : max_seen;
     const denom = logY ? Math.log1p(vmax) : vmax;
     for (let ci = 0; ci < cellOutputIdx.length; ci++) {
@@ -580,8 +598,9 @@
       }
       if (m.rgb_enabled) tags.push('rgb');
       if (m.depth_enabled) tags.push('depth');
-      $('meta').textContent = tags.join('  ·  ');
-      $('mode-tag').textContent = m.mode_label || '';
+      $('meta').replaceChildren(...tags.map(t => Object.assign(document.createElement('div'), { textContent: t })));
+      modeLabel = m.mode_label || 'live';
+      if (ws && ws.readyState === WebSocket.OPEN) $('status').textContent = modeLabel;
       isReplay = (m.mode_label === 'replay');
       replayBar.classList.toggle('show', isReplay);
       if (isReplay) {
@@ -599,8 +618,6 @@
       // capabilities (greyed out when not present, and lit when on).
       hasRgbStream = !!m.rgb_enabled || hasRgbStream;
       hasDepthStream = !!m.depth_enabled || hasDepthStream;
-      $('t-rgb').title = hasRgbStream ? 'show/hide rgb camera pane' : 'no rgb stream in this capture';
-      $('t-depth').title = hasDepthStream ? 'show/hide depth pane' : 'no depth stream in this capture';
       // Manual-mode capture button: visible only on live runs whose
       // server config has capture_mode == "manual".
       $('t-capture').hidden = !(m.mode_label === 'live' && m.capture_mode === 'manual');
@@ -630,7 +647,7 @@
     ws = new WebSocket(`${proto}//${location.host}/ws`);
     ws.binaryType = 'arraybuffer';
     const stat = $('status');
-    ws.onopen  = () => { stat.textContent = 'live'; stat.title = 'streaming from device'; stat.classList.add('ok'); stat.classList.remove('stop'); };
+    ws.onopen  = () => { stat.textContent = modeLabel; stat.title = 'streaming from device'; stat.classList.add('ok'); stat.classList.remove('stop'); };
     ws.onclose = () => { stat.textContent = 'offline'; stat.title = 'disconnected, retrying every 1 s'; stat.classList.add('stop'); stat.classList.remove('ok'); setTimeout(connect, 1000); };
     ws.onerror = () => { stat.textContent = 'offline'; stat.title = 'connection error'; stat.classList.add('stop'); };
     ws.onmessage = (ev) => { if (ev.data instanceof ArrayBuffer) onBinary(ev); };

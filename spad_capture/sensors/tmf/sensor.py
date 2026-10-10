@@ -5,10 +5,14 @@ Serial protocol commands (per the bundled firmware sketch):
     e: load 8828 fw  E: load 882x fw    c: cycle to next preset config
     O: toggle range  z: histogram on    m: start            s: stop
     f: factory calib l: load calib
+
+Raw histograms arrive as binary packets (0x02, sub-packet number, 128 bins,
+CRC-16/XMODEM); everything else is text lines.
 """
 
 from __future__ import annotations
 
+import binascii
 import queue
 import threading
 import time
@@ -78,7 +82,10 @@ ZERO_BIN = 15.04
 ARDUINO_VID = 0x2341   # Arduino USB vendor id
 
 NUM_BINS = 128
-_SKIP_FIELDS = 3   # firmware row prefix: "#Raw,Count,Idx,..."
+_STX = 0x02
+_PACKET = 2 + NUM_BINS + 2
+_OUTDATED = object()   # firmware still printing histograms as text
+_UNPLUGGED = object()
 # Each sub-capture streams a fixed 0..29 cycle: 3 bases x 10 channels. Modes
 # using 8 channels still emit the unused 9th, so rows can follow the
 # end-of-sub-capture marker.
@@ -239,9 +246,9 @@ class TMF8828Sensor:
         # handshake reads are blocking and won't lose data to a queue).
         self._configure()
 
-        # Reader thread takes over after configure; it pushes complete histogram
-        # rows into a queue that capture() pulls from.
-        self._line_q: queue.Queue[bytes] = queue.Queue(maxsize=10_000)
+        # Reader thread takes over after configure; it pushes histogram packets
+        # into a queue that capture() pulls from.
+        self._packets: queue.Queue = queue.Queue(maxsize=10_000)
         self._stop = threading.Event()
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
@@ -298,23 +305,40 @@ class TMF8828Sensor:
         return out
 
     def _read_loop(self) -> None:
-        """Continuously read newline-delimited bytes off the serial port."""
+        """Split the serial stream into histogram packets, skipping text lines."""
         ser = self._serial
+        buf = bytearray()
         while not self._stop.is_set():
             try:
-                if ser.in_waiting:
-                    line = ser.readline()
-                    if line:
-                        try:
-                            self._line_q.put(line, block=False)
-                        except queue.Full:
-                            pass  # drop on overflow
-                else:
-                    time.sleep(0.001)
-            except Exception:
-                if self._stop.is_set():
-                    return
-                time.sleep(0.01)
+                chunk = ser.read(ser.in_waiting or 1)
+            except (serial.SerialException, OSError):
+                if not self._stop.is_set():
+                    self._put(_UNPLUGGED)
+                return
+            buf += chunk
+            while buf:
+                if buf[0] == _STX:
+                    if len(buf) < _PACKET:
+                        break
+                    packet = bytes(buf[:_PACKET])
+                    if binascii.crc_hqx(packet[1:-2], 0xFFFF) == int.from_bytes(packet[-2:], "big"):
+                        self._put((packet[1], np.frombuffer(packet[2:-2], dtype=np.uint8)))
+                        del buf[:_PACKET]
+                    else:
+                        del buf[0]   # corrupt: resync; the missing index voids the frame
+                    continue
+                end, stx = buf.find(b"\n"), buf.find(_STX)
+                if end < 0 and stx < 0:
+                    break
+                if buf.startswith(b"#Raw"):
+                    self._put(_OUTDATED)
+                del buf[:end + 1 if stx < 0 or 0 <= end < stx else stx]
+
+    def _put(self, item) -> None:
+        try:
+            self._packets.put(item, block=False)
+        except queue.Full:
+            pass
 
     # ---------- custom-mask upload ----------
 
@@ -505,7 +529,7 @@ class TMF8828Sensor:
         self._drain()
         try:
             while True:
-                self._line_q.get_nowait()
+                self._packets.get_nowait()
         except queue.Empty:
             pass
 
@@ -549,25 +573,15 @@ class TMF8828Sensor:
 
         while time.time() < deadline:
             try:
-                raw_line = self._line_q.get(timeout=0.5)
+                item = self._packets.get(timeout=0.5)
             except queue.Empty:
                 continue
-            try:
-                line = raw_line.decode("utf-8").rstrip("\r\n")
-            except UnicodeDecodeError:
-                continue
-            if not line.startswith("#Raw"):
-                continue
-            row = line.split(",")
-            try:
-                idx = int(row[_SKIP_FIELDS - 1])
-                data = np.array(row[_SKIP_FIELDS:], dtype=np.int32)
-            except (IndexError, ValueError, OverflowError):
-                bad = True
-                continue
-            if len(data) != NUM_BINS:
-                bad = True
-                continue
+            if item is _OUTDATED:
+                raise RuntimeError("The Arduino runs older firmware. Run `spad tmf flash`.")
+            if item is _UNPLUGGED:
+                raise RuntimeError("The Arduino was disconnected.")
+            idx, data = item
+            data = data.astype(np.int64)
             if not synced:
                 # Rows from the frame already in flight are not ours to count.
                 if idx != 0:

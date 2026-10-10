@@ -206,7 +206,7 @@ class VizServer:
 
         @app.get("/", response_class=HTMLResponse)
         async def index() -> str:
-            return (STATIC_DIR / "index.html").read_text()
+            return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
         @app.get("/meta")
         async def meta() -> dict:

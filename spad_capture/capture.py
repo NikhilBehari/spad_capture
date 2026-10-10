@@ -130,7 +130,7 @@ def run_capture(
     if dropped:
         _console.print(f"[yellow]{dropped} frame(s) dropped[/yellow]  "
                        "rows were lost on the serial link and the frame was re-read")
-    _console.print(f"\n[bold green]done[/bold green]  captured {n_done} frames  →  [cyan]{writer.run_dir}[/cyan]")
+    _console.print(f"\n[bold green]done[/bold green]  captured {n_done} frames  →  [cyan]{writer.run_dir or 'not saved'}[/cyan]")
     return n_done
 
 
@@ -164,7 +164,7 @@ def _print_banner(cfg: Config, sensor: TMF8828Sensor, rgb_cam, writer: Writer) -
             if on:
                 bits.append(f"{nm} ({'no dots' if cfg.rgb.ir_no_dots else 'dots'})")
         tbl.add_row("rgb", "  ·  ".join(bits))
-    tbl.add_row("output", f"{cfg.storage.format.value}  →  [cyan]{writer.run_dir}[/cyan]")
+    tbl.add_row("output", f"{cfg.storage.format.value}  →  [cyan]{writer.run_dir or 'not saved'}[/cyan]")
     # The viz URL is printed up front by run_with_viz, before sensor init.
     _console.print(Panel(tbl, title="[bold]spad capture[/bold]", title_align="left",
                          border_style="cyan", padding=(0, 1)))
